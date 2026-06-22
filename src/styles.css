@@ -686,34 +686,92 @@ tr:last-child td {
 }
 
 @media print {
+  body {
+    background: white;
+    color: #0f172a;
+  }
   body * {
-    visibility: hidden;
+    box-shadow: none !important;
+    border-radius: 0 !important;
   }
-  body.print-receipt #receiptModal,
-  body.print-receipt #receiptModal * {
-    visibility: visible;
-  }
-  body.print-active-page .page.active,
-  body.print-active-page .page.active * {
-    visibility: visible;
-  }
-  #receiptModal.hidden {
+  .sidebar,
+  .topbar,
+  .nav-link,
+  .no-print,
+  button:not(.hidden),
+  [data-close],
+  .form-actions {
     display: none !important;
   }
-  .no-print {
+  .main-content {
+    margin-left: 0;
+    width: 100%;
+    padding: 0;
+  }
+  .page.active {
+    display: block !important;
+  }
+  .page:not(.active) {
     display: none !important;
   }
   #receiptModal {
-    position: absolute;
-    inset: 0;
+    position: static;
+    inset: auto;
     background: white;
-    display: block;
-    padding: 0;
-  }
-  .receipt-card {
+    padding: 20px;
     box-shadow: none;
     border-radius: 0;
-    max-height: none;
+    margin: 0;
     width: 100%;
+    max-width: none;
+  }
+  .receipt-card {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    overflow: visible;
+    box-shadow: none;
+  }
+  .panel,
+  .table-wrap {
+    page-break-inside: avoid;
+    box-shadow: none;
+    border: none;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #0f172a;
+    margin-bottom: 10px;
+  }
+  th, td {
+    border: 1px solid #0f172a;
+    padding: 8px;
+    font-size: 12px;
+  }
+  th {
+    background: #f8fafc;
+    font-weight: bold;
+  }
+  .cards-grid,
+  .two-column,
+  .sales-layout,
+  .filters-row,
+  .sale-add-row {
+    display: block;
+  }
+  .stat-card {
+    grid-column: auto;
+    page-break-inside: avoid;
+    margin-bottom: 10px;
+  }
+  .receipt-content h2,
+  .receipt-content p {
+    margin: 6px 0;
+  }
+  .receipt-total {
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 2px solid #0f172a;
   }
 }

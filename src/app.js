@@ -890,48 +890,54 @@ function downloadFile(filename, content, type = "application/json") {
   URL.revokeObjectURL(link.href);
 }
 
-async function saveElementAsPdf(element, filename) {
-  if (!element) return;
-  const opt = {
-    margin: 0.4,
-    filename,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true },
-    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-  };
-  await html2pdf().set(opt).from(element).save();
-}
-
-async function saveReceiptAsPdf() {
+async function printOrExportPdf() {
   const receiptCard = document.querySelector('#receiptModal .receipt-card');
   const filename = `my-rx-receipt-${todayISO()}-${Date.now()}.pdf`;
 
   if (window.electronAPI?.savePdf) {
-    document.body.classList.add('print-receipt');
     const result = await window.electronAPI.savePdf(filename);
-    document.body.classList.remove('print-receipt');
-    if (!result?.canceled) showToast('Receipt saved as PDF.');
+    if (!result?.canceled) showToast('Receipt exported as PDF.');
     return;
   }
 
-  await saveElementAsPdf(receiptCard, filename);
+  const element = receiptCard.cloneNode(true);
+  element.style.padding = '20px';
+  const opt = {
+    margin: 10,
+    filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, allowTaint: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+  await html2pdf().set(opt).from(element).save();
+  showToast('Receipt exported as PDF.');
 }
 
-async function saveCurrentPageAsPdf() {
+async function printOrExportPagePdf() {
   const activePage = document.querySelector('.page.active');
-  if (!activePage) return;
+  if (!activePage) return showToast('No page to print.');
   const pageId = activePage.id || 'page';
   const filename = `my-rx-${pageId}-${todayISO()}.pdf`;
 
   if (window.electronAPI?.savePdf) {
-    document.body.classList.add('print-active-page');
     const result = await window.electronAPI.savePdf(filename);
-    document.body.classList.remove('print-active-page');
-    if (!result?.canceled) showToast('Page saved as PDF.');
+    if (!result?.canceled) showToast('Page exported as PDF.');
     return;
   }
 
-  await saveElementAsPdf(activePage, filename);
+  const element = activePage.cloneNode(true);
+  element.style.padding = '20px';
+  element.style.backgroundColor = 'white';
+  element.style.color = '#0f172a';
+  const opt = {
+    margin: 10,
+    filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, allowTaint: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+  await html2pdf().set(opt).from(element).save();
+  showToast('Page exported as PDF.');
 }
 
 async function exportBackup() {
@@ -1000,10 +1006,8 @@ function bindEvents() {
   $("addToCartBtn").addEventListener("click", addToCart);
   $("completeSaleBtn").addEventListener("click", completeSale);
   $("clearCartBtn").addEventListener("click", () => { cart = []; renderCart(); });
-  $("printReceiptBtn").addEventListener("click", () => window.print());
-  $("saveReceiptPdfBtn").addEventListener("click", saveReceiptAsPdf);
-  $("printPageBtn").addEventListener("click", () => window.print());
-  $("savePagePdfBtn").addEventListener("click", saveCurrentPageAsPdf);
+  $("printReceiptBtn").addEventListener("click", printOrExportPdf);
+  $("printPageBtn").addEventListener("click", printOrExportPagePdf);
 
   $("addPurchaseLineBtn").addEventListener("click", addPurchaseLine);
   $("completePurchaseBtn").addEventListener("click", completePurchase);
