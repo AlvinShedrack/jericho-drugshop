@@ -141,18 +141,16 @@ select:focus {
 }
 
 .sidebar {
-  width: 282px;
-  min-height: 100vh;
-  background: #0f172a;
+  width: 260px;
+  height: 100vh;
+  background: #0f766e;
   color: white;
-  padding: 24px;
+  padding: 20px;
   position: fixed;
   left: 0;
   top: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar-brand {
