@@ -1,12 +1,12 @@
 {
-  "name": "My Rx Pharmacy Software",
-  "short_name": "My Rx",
-  "description": "Offline pharmacy inventory, POS sales, purchases, reports and backup software.",
+  "name": "Budadiri People's Pharmacy",
+  "short_name": "Budadiri Pharmacy",
+  "description": "Offline pharmacy inventory, sales, purchases, reports, receipts, and backup software.",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#0f766e",
-  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#0057b8",
+  "orientation": "any",
   "icons": [
     {
       "src": "./assets/icon-192.png",

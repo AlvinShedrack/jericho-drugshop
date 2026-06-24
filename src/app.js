@@ -13,6 +13,15 @@ let cart = [];
 let purchaseLines = [];
 let deferredInstallPrompt = null;
 
+const BRAND = {
+  name: "Budadiri People's Pharmacy",
+  tagline: "Your Health, Our Commitment",
+  receiptTagline: "Your Health, Our Priority.",
+  logo: "./assets/budadiri-logo.png",
+  address: "Budadiri Town, Kibuku District, Uganda",
+  phone: "+256 700 123 456",
+  email: "info@budadiripharmacy.ug"
+};
 const pageMeta = {
   dashboard: ["Dashboard", "Business overview and alerts"],
   inventory: ["Inventory", "Medicine stock, batches, prices, and expiry"],
@@ -344,7 +353,7 @@ async function openMedicineForm(id = null) {
     $("quantity").value = med.quantity || 0;
     $("buyingPrice").value = med.buyingPrice || 0;
     $("sellingPrice").value = med.sellingPrice || 0;
-    $("wholesalePrice").value = med.wholesalePrice || 0;
+    $("wholesalePrice").value = "";
     $("reorderLevel").value = med.reorderLevel || 5;
     $("expiryDate").value = med.expiryDate || "";
     $("medicineNotes").value = med.notes || "";
@@ -518,8 +527,8 @@ async function addToCart() {
     saleType
   });
 
-  $("saleQty").value = 1;
-  $("saleDiscount").value = 0;
+  $("saleQty").value = "";
+  $("saleDiscount").value = "";
   renderCart();
 }
 
@@ -604,30 +613,105 @@ async function completeSale() {
 }
 
 function showReceipt(sale) {
+  const subtotal = Number(sale.subtotal || sale.total || 0);
+  const discount = Number(sale.discount || 0);
+  const total = Number(sale.total || 0);
+
   $("receiptContent").innerHTML = `
-    <h2>My Rx Pharmacy</h2>
-    <p>Official Sales Receipt</p>
-    <p><strong>${escapeHtml(sale.receiptNo)}</strong></p>
-    <p>${new Date(sale.createdAt).toLocaleString()}</p>
-    <p>Customer: ${escapeHtml(sale.customerName)}</p>
-    <p>Cashier: ${escapeHtml(sale.cashierName)}</p>
-    <p>Payment: ${escapeHtml(sale.paymentMethod)}</p>
-    <p>Sale type: <strong>${escapeHtml(sale.saleType || "retail").toUpperCase()}</strong></p>
-    <table>
-      <thead><tr><th>Item</th><th>Qty</th><th>Total</th></tr></thead>
-      <tbody>
-        ${sale.lines.map(item => `
+    <img src="${BRAND.logo}" class="receipt-watermark" alt="" />
+
+    <div class="receipt-inner">
+      <div class="receipt-brand-header">
+        <img src="${BRAND.logo}" alt="${BRAND.name}" />
+        <h2>${BRAND.name}</h2>
+        <p>${BRAND.tagline}</p>
+        <div class="receipt-contact-line">
+          ${BRAND.address} | ${BRAND.phone} | ${BRAND.email}
+        </div>
+      </div>
+
+      <div class="receipt-title">Sales Receipt</div>
+
+      <div class="receipt-meta-grid">
+        <div>
+          <strong>Receipt No.:</strong>
+          <span>${escapeHtml(sale.receiptNo)}</span>
+        </div>
+
+        <div>
+          <strong>Cashier:</strong>
+          <span>${escapeHtml(sale.cashierName)}</span>
+        </div>
+
+        <div>
+          <strong>Date:</strong>
+          <span>${new Date(sale.createdAt).toLocaleDateString()}</span>
+        </div>
+
+        <div>
+          <strong>Payment:</strong>
+          <span>${escapeHtml(sale.paymentMethod)}</span>
+        </div>
+
+        <div>
+          <strong>Time:</strong>
+          <span>${new Date(sale.createdAt).toLocaleTimeString()}</span>
+        </div>
+
+        <div>
+          <strong>Customer:</strong>
+          <span>${escapeHtml(sale.customerName)}</span>
+        </div>
+      </div>
+
+      <table>
+        <thead>
           <tr>
-            <td>${escapeHtml(item.name)}</td>
-            <td>${item.qty}</td>
-            <td>${formatMoney((item.qty * item.sellingPrice) - item.discount)}</td>
+            <th>#</th>
+            <th>Item</th>
+            <th>Qty</th>
+            <th>Unit Price</th>
+            <th>Total</th>
           </tr>
-        `).join("")}
-      </tbody>
-    </table>
-    <div class="receipt-total"><span>Total</span><span>${formatMoney(sale.total)}</span></div>
-    <p style="margin-top:16px">Thank you for your business.</p>
+        </thead>
+
+        <tbody>
+          ${sale.lines.map((item, index) => `
+            <tr>
+              <td>${index + 1}</td>
+              <td>${escapeHtml(item.name)}</td>
+              <td>${item.qty}</td>
+              <td>${formatMoney(item.sellingPrice)}</td>
+              <td>${formatMoney((item.qty * item.sellingPrice) - item.discount)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+
+      <div class="receipt-total-box">
+        <div class="receipt-total-line">
+          <span>Subtotal</span>
+          <strong>${formatMoney(subtotal)}</strong>
+        </div>
+
+        <div class="receipt-total-line">
+          <span>Discount</span>
+          <strong>${formatMoney(discount)}</strong>
+        </div>
+
+        <div class="receipt-total-line grand">
+          <span>Grand Total</span>
+          <strong>${formatMoney(total)}</strong>
+        </div>
+      </div>
+
+      <div class="receipt-footer-note">
+        Thank you for choosing ${BRAND.name}
+        <span>${BRAND.receiptTagline}</span>
+      </div>
+    </div>
   `;
+
   openModal("receiptModal");
 }
 
@@ -709,6 +793,17 @@ async function completePurchase() {
 async function renderReports() {
   const reportDate = $("reportDate").value || todayISO();
   $("reportDate").value = reportDate;
+    if ($("reportIdText")) {
+    $("reportIdText").textContent = `SR-${reportDate.replaceAll("-", "")}`;
+  }
+
+  if ($("reportGeneratedOnText")) {
+    $("reportGeneratedOnText").textContent = new Date().toLocaleString();
+  }
+
+  if ($("reportGeneratedByText")) {
+    $("reportGeneratedByText").textContent = currentUser ? currentUser.name : "System User";
+  }
 
   const medicines = await getAll(STORE.medicines);
   const sales = await getAll(STORE.sales);
@@ -950,11 +1045,30 @@ function reportStyles() {
       }
 
       .report-page {
+        position: relative;
         width: 100%;
         max-width: 1120px;
         margin: 0 auto;
         background: #ffffff;
         padding: 28px;
+        overflow: hidden;
+      }
+
+      .report-watermark {
+        position: absolute;
+        width: 42%;
+        max-width: 420px;
+        opacity: 0.045;
+        top: 48%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 0;
+        pointer-events: none;
+      }
+
+      .report-page > *:not(.report-watermark) {
+        position: relative;
+        z-index: 1;
       }
 
       .report-header {
@@ -962,8 +1076,8 @@ function reportStyles() {
         justify-content: space-between;
         align-items: flex-start;
         gap: 24px;
-        border-bottom: 3px solid #0f766e;
-        padding-bottom: 18px;
+        border-bottom: 3px solid #0057b8;
+        padding-bottom: 16px;
         margin-bottom: 22px;
       }
 
@@ -973,33 +1087,36 @@ function reportStyles() {
         gap: 12px;
       }
 
-      .brand-logo {
-        width: 48px;
-        height: 48px;
-        border-radius: 14px;
-        background: #0f766e;
-        color: #ffffff;
-        display: grid;
-        place-items: center;
-        font-weight: 800;
-        font-size: 20px;
+      .brand-logo-img {
+        width: 58px;
+        height: 58px;
+        object-fit: contain;
+        border-radius: 12px;
+        background: #ffffff;
       }
 
       .brand h1 {
         margin: 0;
-        font-size: 22px;
+        font-size: 20px;
         letter-spacing: -0.02em;
+        color: #0057b8;
+        text-transform: uppercase;
       }
 
       .brand p {
         margin: 3px 0 0;
-        color: #64748b;
+        color: #0b8f2a;
+        font-weight: 700;
       }
 
       .report-meta {
         text-align: right;
         color: #334155;
         font-size: 11px;
+        border: 1px solid #bfdbfe;
+        border-radius: 10px;
+        padding: 10px;
+        background: #f8fbff;
       }
 
       .report-title {
@@ -1008,8 +1125,9 @@ function reportStyles() {
 
       .report-title h2 {
         margin: 0 0 4px;
-        font-size: 20px;
-        color: #0f172a;
+        font-size: 22px;
+        color: #0057b8;
+        text-transform: uppercase;
       }
 
       .report-title p {
@@ -1025,10 +1143,11 @@ function reportStyles() {
       }
 
       .summary-card {
-        border: 1px solid #cbd5e1;
-        border-left: 4px solid #0f766e;
+        border: 1px solid #bfdbfe;
+        border-left: 4px solid #0057b8;
         padding: 11px 12px;
-        background: #f8fafc;
+        background: rgba(248, 251, 255, 0.92);
+        border-radius: 10px;
       }
 
       .summary-card span {
@@ -1044,7 +1163,7 @@ function reportStyles() {
         display: block;
         margin-top: 5px;
         font-size: 16px;
-        color: #0f172a;
+        color: #0057b8;
       }
 
       .section {
@@ -1055,9 +1174,10 @@ function reportStyles() {
       .section h3 {
         margin: 0 0 8px;
         font-size: 15px;
-        color: #0f172a;
-        border-bottom: 1px solid #e2e8f0;
+        color: #0057b8;
+        border-bottom: 1px solid #bfdbfe;
         padding-bottom: 6px;
+        text-transform: uppercase;
       }
 
       .info-grid {
@@ -1070,7 +1190,8 @@ function reportStyles() {
       .info-box {
         border: 1px solid #e2e8f0;
         padding: 9px;
-        background: #f8fafc;
+        background: rgba(248, 250, 252, 0.92);
+        border-radius: 8px;
       }
 
       .info-box span {
@@ -1092,6 +1213,7 @@ function reportStyles() {
         border-collapse: collapse;
         margin-top: 8px;
         page-break-inside: auto;
+        background: rgba(255, 255, 255, 0.92);
       }
 
       thead {
@@ -1103,24 +1225,24 @@ function reportStyles() {
       }
 
       th {
-        background: #0f766e;
+        background: #0057b8;
         color: #ffffff;
         text-align: left;
         padding: 8px;
         font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        border: 1px solid #0f766e;
+        border: 1px solid #0057b8;
       }
 
       td {
         padding: 8px;
-        border: 1px solid #cbd5e1;
+        border: 1px solid #bfdbfe;
         vertical-align: top;
       }
 
       tbody tr:nth-child(even) {
-        background: #f8fafc;
+        background: rgba(248, 251, 255, 0.75);
       }
 
       .text-right {
@@ -1153,16 +1275,18 @@ function reportStyles() {
 
       .empty-box {
         border: 1px dashed #cbd5e1;
-        background: #f8fafc;
+        background: rgba(248, 250, 252, 0.92);
         padding: 14px;
         color: #64748b;
+        border-radius: 8px;
       }
 
       .totals-box {
         width: 320px;
         margin-left: auto;
         margin-top: 14px;
-        border: 1px solid #cbd5e1;
+        border: 1px solid #bfdbfe;
+        background: rgba(255, 255, 255, 0.92);
       }
 
       .total-line {
@@ -1177,13 +1301,34 @@ function reportStyles() {
         border-bottom: none;
         font-weight: 800;
         font-size: 14px;
-        background: #ecfeff;
+        background: #eaf3ff;
+        color: #0057b8;
+      }
+
+      .approval-box {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 26px;
+      }
+
+      .approval-box div {
+        border: 1px solid #bfdbfe;
+        padding: 12px;
+        border-radius: 10px;
+      }
+
+      .approval-line {
+        display: block;
+        border-bottom: 1px solid #0f172a;
+        height: 24px;
+        margin-top: 10px;
       }
 
       .footer {
         margin-top: 28px;
         padding-top: 12px;
-        border-top: 1px solid #cbd5e1;
+        border-top: 1px solid #bfdbfe;
         color: #64748b;
         font-size: 10px;
         display: flex;
@@ -1201,6 +1346,10 @@ function reportStyles() {
           padding: 0;
         }
 
+        a[href]::after {
+          content: "" !important;
+        }
+
         @page {
           size: A4 portrait;
           margin: 12mm;
@@ -1211,7 +1360,9 @@ function reportStyles() {
 }
 
 function reportShell(title, subtitle, bodyHtml) {
-  const printedBy = currentUser ? `${escapeHtml(currentUser.name)} (${escapeHtml(currentUser.role)})` : "Unknown user";
+  const printedBy = currentUser
+    ? `${escapeHtml(currentUser.name)} (${escapeHtml(currentUser.role)})`
+    : "Unknown user";
 
   return `
     <!DOCTYPE html>
@@ -1220,21 +1371,25 @@ function reportShell(title, subtitle, bodyHtml) {
       <title>${escapeHtml(title)}</title>
       ${reportStyles()}
     </head>
+
     <body>
       <main class="report-page">
+        <img src="${BRAND.logo}" class="report-watermark" alt="" />
+
         <header class="report-header">
           <div class="brand">
-            <div class="brand-logo">Rx</div>
+            <img src="${BRAND.logo}" class="brand-logo-img" alt="${BRAND.name}" />
             <div>
-              <h1>My Rx Pharmacy Software</h1>
-              <p>Professional Pharmacy Report</p>
+              <h1>${BRAND.name}</h1>
+              <p>${BRAND.tagline}</p>
             </div>
           </div>
 
           <div class="report-meta">
             <strong>Generated:</strong> ${safeDateTime(new Date().toISOString())}<br>
             <strong>Printed By:</strong> ${printedBy}<br>
-            <strong>Mode:</strong> Offline Ready
+            <strong>Address:</strong> ${BRAND.address}<br>
+            <strong>Phone:</strong> ${BRAND.phone}
           </div>
         </header>
 
@@ -1245,9 +1400,20 @@ function reportShell(title, subtitle, bodyHtml) {
 
         ${bodyHtml}
 
+        <section class="approval-box">
+          <div>
+            <strong>Approved By:</strong>
+            <span class="approval-line"></span>
+          </div>
+          <div>
+            <strong>Date:</strong>
+            <span class="approval-line"></span>
+          </div>
+        </section>
+
         <footer class="footer">
-          <span>Generated by My Rx Pharmacy Software</span>
-          <span>This report is based on the data stored on this device/browser.</span>
+          <span>Generated by ${BRAND.name}</span>
+          <span>${BRAND.email}</span>
         </footer>
       </main>
     </body>
@@ -1841,17 +2007,7 @@ async function printOrExportPdf() {
     return;
   }
 
-  const html = reportShell(
-    "Sales Receipt",
-    "Official customer receipt.",
-    `
-      <section class="section">
-        ${receiptContent.innerHTML}
-      </section>
-    `
-  );
-
-  printHtmlDocument(html);
+  printElement("receiptContent", "Sales Receipt");
   showToast("Receipt prepared for printing.");
 }
 
@@ -1864,14 +2020,37 @@ async function exportBackup() {
 
 async function importBackup(file) {
   if (!file) return;
+
+  const confirmed = confirm(
+    "Importing this backup will replace the current data on this device. Continue?"
+  );
+
+  if (!confirmed) {
+    $("importBackupInput").value = "";
+    return;
+  }
+
   try {
     const text = await file.text();
+
+    if (!text.trim()) {
+      throw new Error("Backup file is empty.");
+    }
+
     const backup = JSON.parse(text);
+
     await importAllData(backup);
-    await writeAudit("backup_imported", { filename: file.name });
-    showToast("Backup imported successfully.");
-    await refreshAll();
+
+    currentUser = null;
+    localStorage.removeItem(SESSION_KEY);
+
+    showToast("Backup imported successfully. Please sign in again.");
+
+    setTimeout(() => {
+      location.reload();
+    }, 1200);
   } catch (error) {
+    console.error("Backup import failed:", error);
     showToast(error.message || "Backup import failed.");
   } finally {
     $("importBackupInput").value = "";
@@ -1888,6 +2067,83 @@ async function refreshAll() {
   await renderReports();
   renderCart();
   renderPurchaseLines();
+}
+function printElement(elementId, title = "Print") {
+  const element = $(elementId);
+  if (!element) return showToast("Nothing to print.");
+
+  const printWindow = window.open("", "_blank", "width=900,height=1100");
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>${title}</title>
+        <link rel="stylesheet" href="./src/styles.css" />
+        <style>
+          @page {
+            size: A4;
+            margin: 0;
+          }
+
+          html,
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+
+          body {
+            padding: 10mm !important;
+            font-family: Arial, sans-serif;
+          }
+
+          .no-print,
+          button {
+            display: none !important;
+          }
+
+          a[href]::after {
+            content: "" !important;
+          }
+
+          .panel,
+          .receipt-content {
+            box-shadow: none !important;
+            border: none !important;
+          }
+
+          .table-wrap {
+            overflow: visible !important;
+          }
+
+          table {
+            page-break-inside: auto;
+          }
+
+          tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+        </style>
+      </head>
+
+      <body>
+        ${element.outerHTML}
+
+        <script>
+          window.onload = function () {
+            setTimeout(function () {
+              window.print();
+              window.close();
+            }, 500);
+          };
+        <\/script>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
 }
 
 function bindEvents() {
@@ -1921,7 +2177,9 @@ function bindEvents() {
   $("addToCartBtn").addEventListener("click", addToCart);
   $("completeSaleBtn").addEventListener("click", completeSale);
   $("clearCartBtn").addEventListener("click", () => { cart = []; renderCart(); });
-  $("printReceiptBtn")?.addEventListener("click", printOrExportPdf);
+  $("printReceiptBtn").addEventListener("click", () => {
+    printElement("receiptContent", "Sales Receipt");
+  });
   $("printPageBtn")?.addEventListener("click", printOrExportPagePdf);
 
   $("addPurchaseLineBtn").addEventListener("click", addPurchaseLine);
@@ -1931,6 +2189,12 @@ function bindEvents() {
   $("refreshReportsBtn").addEventListener("click", renderReports);
   $("reportDate").addEventListener("change", renderReports);
   $("exportSalesCsvBtn").addEventListener("click", exportSalesCsv);
+    const printReportBtn = $("printReportBtn");
+    if (printReportBtn) {
+      printReportBtn.addEventListener("click", () => {
+        printElement("reportPrintable", "Sales Report");
+      });
+    }
   $("exportPurchasesCsvBtn").addEventListener("click", exportPurchasesCsv);
 
   $("addUserBtn").addEventListener("click", () => openUserForm());

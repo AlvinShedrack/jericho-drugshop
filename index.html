@@ -3,21 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My Rx Pharmacy Software</title>
+  <title>Budadiri People's Pharmacy</title>
   <link rel="stylesheet" href="./src/styles.css" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <meta name="theme-color" content="#0f766e" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="My Rx" />
+  <meta name="apple-mobile-web-app-title" content="Budadiri Pharmacy" />
 </head>
 <body>
   <div id="toast" class="toast"></div>
 
   <section id="loginScreen" class="login-screen">
     <div class="login-card">
-      <div class="brand-mark">Rx</div>
-      <h1>My Rx Pharmacy Software</h1>
-      <p class="muted">Offline pharmacy inventory, sales, purchases, reports, and backup.</p>
+    <img src="./assets/budadiri-logo.png" alt="Budadiri People's Pharmacy" class="login-logo" />
+    <h1>Budadiri People's Pharmacy</h1>
+    <p class="muted">Offline pharmacy inventory, sales, purchases, reports, and backup.</p>
       <form id="loginForm" class="login-form">
         <label>Email</label>
         <input id="loginEmail" type="email" placeholder="admin@example.com" required />
@@ -36,12 +36,9 @@
 
   <div id="appShell" class="app-shell hidden">
     <aside class="sidebar">
-      <div class="sidebar-brand">
-        <div class="brand-mark small">Rx</div>
-        <div>
-          <h2>My Rx</h2>
-          <span>Pharmacy Suite</span>
-        </div>
+      <div class="sidebar-brand logo-sidebar-card">
+        <img src="./assets/budadiri-logo.png" alt="Budadiri People's Pharmacy" class="sidebar-logo" />
+        <span>Your Health, Our Commitment</span>
       </div>
 
       <nav>
@@ -63,9 +60,12 @@
 
     <main class="main-content">
       <header class="topbar">
-        <div>
-          <h1 id="pageTitle">Dashboard</h1>
-          <p id="pageSubtitle">Business overview and alerts</p>
+        <div class="topbar-brand">
+          <img src="./assets/budadiri-logo.png" alt="Budadiri People's Pharmacy" class="topbar-logo" />
+          <div>
+            <h1 id="pageTitle">Dashboard</h1>
+            <p id="pageSubtitle">Business overview and alerts</p>
+          </div>
         </div>
         <div class="top-actions">
           <button id="installBtn" class="secondary-btn hidden">Install App</button>
@@ -190,8 +190,8 @@
             </div>
             <div class="sale-add-row">
               <select id="saleMedicineSelect"></select>
-              <input id="saleQty" type="number" min="1" value="1" placeholder="Qty" />
-              <input id="saleDiscount" type="number" min="0" value="0" placeholder="Discount" />
+              <input id="saleQty" type="number" min="1" placeholder="Quantity" />
+              <input id="saleDiscount" type="number" min="0" placeholder="Discount" />
               <button id="addToCartBtn" class="secondary-btn">Add to Cart</button>
             </div>
             <div class="table-wrap">
@@ -277,45 +277,109 @@
       </section>
 
       <section id="reports" class="page">
-        <div class="panel">
-          <div class="panel-header split">
-            <div>
-              <h2>Reports</h2>
-              <p>Daily sales, profit, low stock, expiry, and stock value reports.</p>
-            </div>
-            <div class="report-actions">
-              <button id="exportSalesCsvBtn" class="secondary-btn">Export Sales CSV</button>
-              <button id="exportPurchasesCsvBtn" class="secondary-btn">Export Purchases CSV</button>
+        <div id="reportPrintable" class="panel printable-report branded-print">
+          <img src="./assets/budadiri-logo.png" class="print-watermark" alt="" />
+
+          <div class="report-print-header">
+            <div class="report-logo-line">
+              <img src="./assets/budadiri-logo.png" alt="Budadiri People's Pharmacy" class="report-logo" />
+              <div>
+                <h1>BUDADIRI PEOPLE'S PHARMACY</h1>
+                <p>Your Health, Our Commitment</p>
+              </div>
             </div>
           </div>
-          <div class="filters-row">
+
+          <div class="panel-header split">
+            <div>
+              <h2>Sales Report</h2>
+              <p>Daily sales, profit, low stock, expiry, and stock value reports.</p>
+            </div>
+
+            <div class="report-actions no-print">
+              <button id="printReportBtn" class="primary-btn">Print Report</button>
+              <button id="exportSalesCsvBtn" class="secondary-btn">Export Sales CSV</button>
+            </div>
+          </div>
+
+          <div class="filters-row no-print">
             <input id="reportDate" type="date" />
             <button id="refreshReportsBtn" class="secondary-btn">Refresh</button>
           </div>
-          <div class="cards-grid compact">
-            <article class="stat-card success"><span>Selected Day Sales</span><strong id="reportSalesTotal">USh 0</strong></article>
-            <article class="stat-card"><span>Selected Day Profit</span><strong id="reportProfitTotal">USh 0</strong></article>
-            <article class="stat-card warning"><span>Low Stock Items</span><strong id="reportLowStock">0</strong></article>
-            <article class="stat-card danger"><span>Expired Items</span><strong id="reportExpired">0</strong></article>
+
+          <div class="print-report-meta">
+            <div><strong>Report ID:</strong> <span id="reportIdText">SR-LOCAL</span></div>
+            <div><strong>Generated On:</strong> <span id="reportGeneratedOnText"></span></div>
+            <div><strong>Generated By:</strong> <span id="reportGeneratedByText">System User</span></div>
           </div>
+
+          <div class="cards-grid compact">
+            <article class="stat-card success">
+              <span>Selected Day Sales</span>
+              <strong id="reportSalesTotal">USh 0</strong>
+            </article>
+
+            <article class="stat-card">
+              <span>Selected Day Profit</span>
+              <strong id="reportProfitTotal">USh 0</strong>
+            </article>
+
+            <article class="stat-card warning">
+              <span>Low Stock Items</span>
+              <strong id="reportLowStock">0</strong>
+            </article>
+
+            <article class="stat-card danger">
+              <span>Expired Items</span>
+              <strong id="reportExpired">0</strong>
+            </article>
+          </div>
+
           <div class="two-column">
             <div>
               <h3>Sales for selected day</h3>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Receipt</th><th>Customer</th><th>Total</th><th>Profit</th><th>Time</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Receipt</th>
+                      <th>Customer</th>
+                      <th>Total</th>
+                      <th>Profit</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
                   <tbody id="reportSalesTable"></tbody>
                 </table>
               </div>
             </div>
+
             <div>
               <h3>Low Stock / Expiry</h3>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Medicine</th><th>Qty</th><th>Expiry</th><th>Status</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Medicine</th>
+                      <th>Qty</th>
+                      <th>Expiry</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
                   <tbody id="reportAlertsTable"></tbody>
                 </table>
               </div>
+            </div>
+          </div>
+
+          <div class="print-signature-area">
+            <div>
+              <strong>Approved By:</strong>
+              <span></span>
+            </div>
+            <div>
+              <strong>Date:</strong>
+              <span></span>
             </div>
           </div>
         </div>
@@ -351,7 +415,7 @@
             <button id="exportBackupBtn" class="primary-btn">Export Full Backup</button>
             <label class="file-btn">
               Import Backup
-              <input id="importBackupInput" type="file" accept="application/json" />
+              <input id="importBackupInput" type="file" accept=".json,application/json" />
             </label>
           </div>
           <div class="warning-box">
@@ -378,7 +442,7 @@
         <div><label>Quantity</label><input id="quantity" type="number" min="0" required /></div>
         <div><label>Buying Price</label><input id="buyingPrice" type="number" min="0" required /></div>
         <div><label>Selling Price</label><input id="sellingPrice" type="number" min="0" required /></div>
-        <div><label>Wholesale Price</label><input id="wholesalePrice" type="number" min="0" value="0" /></div>
+        <div><label>Wholesale Price</label><input id="wholesalePrice" type="number" min="0" placeholder="Wholesale price" /></div>
         <div><label>Reorder Level</label><input id="reorderLevel" type="number" min="0" value="5" required /></div>
         <div><label>Expiry Date</label><input id="expiryDate" type="date" required /></div>
         <div class="span-two"><label>Notes</label><input id="medicineNotes" /></div>

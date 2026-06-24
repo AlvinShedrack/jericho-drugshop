@@ -125,8 +125,8 @@ async function bulkPut(storeName, records = []) {
 async function exportAllData() {
   const output = {
     exportedAt: new Date().toISOString(),
-    app: "My Rx Pharmacy Software",
-    version: "1.0.0",
+    app: "Budadiri People's Pharmacy",
+    version: "1.0.1",
     data: {}
   };
 
@@ -138,13 +138,33 @@ async function exportAllData() {
 }
 
 async function importAllData(backup) {
-  if (!backup || !backup.data) {
+  if (!backup || typeof backup !== "object") {
     throw new Error("Invalid backup file.");
   }
 
+  // Supports both new backups: { data: { medicines: [] } }
+  // and older backups: { medicines: [] }
+  const sourceData = backup.data && typeof backup.data === "object"
+    ? backup.data
+    : backup;
+
+  const hasAnyStore = STORE_NAMES.some(storeName => Array.isArray(sourceData[storeName]));
+
+  if (!hasAnyStore) {
+    throw new Error("Invalid backup file. No supported pharmacy data found.");
+  }
+
+  // Clear first to avoid duplicate email / receipt / ID conflicts.
   for (const storeName of STORE_NAMES) {
-    if (Array.isArray(backup.data[storeName])) {
-      await bulkPut(storeName, backup.data[storeName]);
+    await clearStore(storeName);
+  }
+
+  // Import stores in safe order.
+  const importOrder = ["users", "suppliers", "medicines", "sales", "purchases", "auditLogs"];
+
+  for (const storeName of importOrder) {
+    if (Array.isArray(sourceData[storeName])) {
+      await bulkPut(storeName, sourceData[storeName]);
     }
   }
 

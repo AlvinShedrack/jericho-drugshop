@@ -1,4 +1,4 @@
-const CACHE_NAME = "my-rx-cache-v3";
+const CACHE_NAME = "my-rx-cache-v4";
 
 const FILES_TO_CACHE = [
   "./",
@@ -9,7 +9,8 @@ const FILES_TO_CACHE = [
   "./src/db.js",
   "./src/app.js",
   "./assets/icon-192.png",
-  "./assets/icon-512.png"
+  "./assets/icon-512.png",
+  "./assets/budadiri-logo.png"
 ];
 
 self.addEventListener("install", event => {

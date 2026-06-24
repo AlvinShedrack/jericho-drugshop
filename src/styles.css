@@ -947,3 +947,664 @@ tr:last-child td {
     margin-top: 16px;
   }
 }
+
+/* ================================
+   BUDADIRI BRANDING UPDATE
+================================ */
+
+:root {
+  --primary: #0057b8;
+  --primary-dark: #003f88;
+  --primary-soft: #eaf3ff;
+  --success: #0b8f2a;
+}
+
+.login-logo {
+  width: 190px;
+  max-width: 100%;
+  display: block;
+  margin: 0 auto 18px;
+}
+
+.login-card {
+  text-align: center;
+}
+
+.logo-sidebar-card {
+  display: block;
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 14px;
+  text-align: center;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.18);
+}
+
+.sidebar-logo {
+  width: 100%;
+  max-width: 210px;
+  display: block;
+  margin: 0 auto 8px;
+}
+
+.logo-sidebar-card span {
+  display: block;
+  color: #0b8f2a;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.topbar-logo {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #dbeafe;
+  padding: 5px;
+}
+
+.sidebar {
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 7px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 20px;
+}
+
+.report-logo-line {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 4px solid #0057b8;
+  padding-bottom: 18px;
+  margin-bottom: 22px;
+}
+
+.report-logo {
+  width: 170px;
+  height: auto;
+  object-fit: contain;
+}
+
+.report-logo-line h1 {
+  margin: 0;
+  color: #0057b8;
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.report-logo-line p {
+  margin: 8px 0 0;
+  color: #0b8f2a;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.branded-print {
+  position: relative;
+  overflow: hidden;
+}
+
+.print-watermark {
+  position: absolute;
+  width: 55%;
+  max-width: 650px;
+  opacity: 0.055;
+  top: 34%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.branded-print > *:not(.print-watermark) {
+  position: relative;
+  z-index: 1;
+}
+
+.print-report-meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  border: 1px solid #bfdbfe;
+  background: #f8fbff;
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 18px;
+  color: #0f172a;
+}
+
+.print-signature-area {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 28px;
+}
+
+.print-signature-area div {
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.print-signature-area span {
+  display: block;
+  border-bottom: 1px solid #0f172a;
+  margin-top: 18px;
+  height: 22px;
+}
+
+/* ================================
+   RECEIPT BRANDING
+================================ */
+
+.receipt-card {
+  width: min(620px, 100%);
+}
+
+.receipt-content {
+  position: relative;
+  background: #ffffff;
+  padding: 22px;
+  color: #0f172a;
+  overflow: hidden;
+}
+
+.receipt-watermark {
+  position: absolute;
+  width: 72%;
+  opacity: 0.055;
+  top: 52%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.receipt-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.receipt-brand-header {
+  text-align: center;
+  border-bottom: 3px solid #0057b8;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+}
+
+.receipt-brand-header img {
+  width: 185px;
+  max-width: 100%;
+  display: block;
+  margin: 0 auto 8px;
+}
+
+.receipt-brand-header h2 {
+  color: #0057b8;
+  font-size: 26px;
+  line-height: 1.1;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.receipt-brand-header p {
+  margin: 6px 0 0;
+  color: #0b8f2a;
+  font-weight: 700;
+}
+
+.receipt-contact-line {
+  text-align: center;
+  font-size: 13px;
+  color: #334155;
+  margin-top: 8px;
+}
+
+.receipt-title {
+  text-align: center;
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 900;
+  text-transform: uppercase;
+  margin: 18px 0;
+}
+
+.receipt-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 28px;
+  margin-bottom: 14px;
+}
+
+.receipt-meta-grid div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: 7px;
+}
+
+.receipt-meta-grid strong {
+  color: #0f172a;
+}
+
+.receipt-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+.receipt-content thead th {
+  background: #0057b8;
+  color: white;
+  padding: 10px 8px;
+  text-align: left;
+}
+
+.receipt-content td {
+  padding: 9px 8px;
+  border-bottom: 1px dashed #cbd5e1;
+}
+
+.receipt-total-box {
+  width: min(320px, 100%);
+  margin-left: auto;
+  margin-top: 16px;
+}
+
+.receipt-total-line {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 0;
+}
+
+.receipt-total-line.grand {
+  border-top: 3px solid #0057b8;
+  margin-top: 8px;
+  padding-top: 12px;
+  color: #0057b8;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.receipt-footer-note {
+  margin-top: 24px;
+  text-align: center;
+  color: #0057b8;
+  font-weight: 800;
+}
+
+.receipt-footer-note span {
+  display: block;
+  color: #0f172a;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+/* Print cleanup */
+@page {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  a[href]::after {
+    content: "" !important;
+  }
+
+  .receipt-content,
+  .branded-print {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar-brand {
+    align-items: flex-start;
+  }
+
+  .topbar-logo {
+    display: none;
+  }
+
+  .report-logo-line {
+    display: block;
+    text-align: center;
+  }
+
+  .report-logo {
+    margin-bottom: 10px;
+  }
+
+  .print-report-meta,
+  .print-signature-area,
+  .receipt-meta-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* ================================
+   MOBILE RESPONSIVENESS FIXES
+================================ */
+
+@media (max-width: 900px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .app-shell,
+  .layout,
+  .dashboard-layout {
+    display: block;
+  }
+
+  .sidebar {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 14px;
+    border-radius: 0;
+  }
+
+  .logo-sidebar-card {
+    max-width: 260px;
+    margin: 0 auto 16px;
+  }
+
+  .sidebar-logo {
+    max-width: 190px;
+  }
+
+  .sidebar nav,
+  .nav-list,
+  .sidebar-menu {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .sidebar button,
+  .nav-item {
+    width: 100%;
+    justify-content: flex-start;
+    font-size: 14px;
+    padding: 10px;
+  }
+
+  .main,
+  .main-content,
+  .content {
+    margin-left: 0 !important;
+    width: 100% !important;
+    padding: 14px !important;
+  }
+
+  .topbar {
+    display: block;
+  }
+
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .topbar-logo {
+    width: 44px;
+    height: 44px;
+  }
+
+  .topbar h1 {
+    font-size: 22px;
+  }
+
+  .cards-grid,
+  .cards,
+  .stats-grid,
+  .two-column,
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .panel,
+  .card,
+  .stat-card {
+    width: 100%;
+  }
+
+  .table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: 720px;
+  }
+
+  .receipt-card,
+  .modal-content {
+    width: 96vw !important;
+    max-width: 96vw !important;
+    margin: 10px auto;
+  }
+
+  .receipt-content {
+    padding: 14px;
+  }
+
+  .receipt-brand-header img {
+    width: 140px;
+  }
+
+  .receipt-brand-header h2 {
+    font-size: 20px;
+  }
+
+  .receipt-meta-grid,
+  .print-report-meta,
+  .print-signature-area {
+    grid-template-columns: 1fr !important;
+  }
+
+  .report-logo-line {
+    display: block;
+    text-align: center;
+  }
+
+  .report-logo {
+    width: 140px;
+    margin-bottom: 10px;
+  }
+
+  .report-logo-line h1 {
+    font-size: 24px;
+  }
+
+  .report-logo-line p {
+    font-size: 15px;
+  }
+
+  .print-watermark,
+  .receipt-watermark {
+    width: 90%;
+    opacity: 0.045;
+  }
+}
+
+@media (max-width: 520px) {
+  .sidebar nav,
+  .nav-list,
+  .sidebar-menu {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-brand {
+    align-items: flex-start;
+  }
+
+  .topbar-logo {
+    display: none;
+  }
+
+  .panel-header.split {
+    display: block;
+  }
+
+  .report-actions {
+    margin-top: 12px;
+    display: grid;
+    gap: 8px;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    width: 100%;
+  }
+
+  .receipt-content table {
+    font-size: 12px;
+  }
+}
+
+/* ================================
+   FINAL LOGO SIZE REDUCTION
+================================ */
+
+.login-logo {
+  width: 125px !important;
+  max-width: 100% !important;
+  margin-bottom: 12px !important;
+}
+
+.login-card h1 {
+  font-size: 24px !important;
+}
+
+.logo-sidebar-card {
+  padding: 10px !important;
+  border-radius: 18px !important;
+}
+
+.sidebar-logo {
+  width: 135px !important;
+  max-width: 135px !important;
+  margin: 0 auto 6px !important;
+}
+
+.logo-sidebar-card span {
+  font-size: 11px !important;
+}
+
+.topbar-logo {
+  width: 75px !important;
+  height: 75px !important;
+  padding: 3px !important;
+  border-radius: 9px !important;
+}
+
+.report-logo {
+  width: 105px !important;
+}
+
+.report-logo-line {
+  gap: 16px !important;
+  padding-bottom: 12px !important;
+  margin-bottom: 16px !important;
+}
+
+.report-logo-line h1 {
+  font-size: 24px !important;
+}
+
+.report-logo-line p {
+  font-size: 14px !important;
+}
+
+.print-watermark {
+  width: 42% !important;
+  max-width: 420px !important;
+  opacity: 0.045 !important;
+}
+
+.receipt-brand-header img {
+  width: 120px !important;
+}
+
+.receipt-brand-header h2 {
+  font-size: 21px !important;
+}
+
+.receipt-brand-header p {
+  font-size: 13px !important;
+}
+
+.receipt-watermark {
+  width: 55% !important;
+  opacity: 0.045 !important;
+}
+
+.receipt-content {
+  padding: 18px !important;
+}
+
+@media (max-width: 760px) {
+  .login-logo {
+    width: 105px !important;
+  }
+
+  .sidebar-logo {
+    width: 115px !important;
+    max-width: 115px !important;
+  }
+
+  .topbar-logo {
+    width: 64px !important;
+    height: 64px !important;
+  }
+
+  .report-logo {
+    width: 95px !important;
+  }
+
+  .receipt-brand-header img {
+    width: 105px !important;
+  }
+
+  .report-logo-line h1 {
+    font-size: 20px !important;
+  }
+}
