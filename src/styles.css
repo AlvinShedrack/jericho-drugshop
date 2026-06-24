@@ -1608,3 +1608,200 @@ tr:last-child td {
     font-size: 20px !important;
   }
 }
+
+/* =========================================
+   MOBILE NAVIGATION IMPROVEMENT
+   Makes desktop sidebar become compact mobile nav
+========================================= */
+
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .app-shell {
+    display: block !important;
+  }
+
+  .sidebar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    padding: 8px 10px !important;
+    background: #06264f !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .logo-sidebar-card {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 6px 8px !important;
+    margin: 0 0 8px 0 !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+  }
+
+  .sidebar-logo {
+    width: 42px !important;
+    height: 42px !important;
+    max-width: 42px !important;
+    object-fit: contain !important;
+    margin: 0 !important;
+  }
+
+  .logo-sidebar-card span {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: #0b8f2a !important;
+    white-space: nowrap !important;
+  }
+
+  .sidebar nav {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    white-space: nowrap !important;
+    padding: 2px 0 6px !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .sidebar nav::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .nav-link {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    padding: 9px 12px !important;
+    margin: 0 !important;
+    border-radius: 999px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    color: #dbeafe !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  }
+
+  .nav-link.active {
+    color: #ffffff !important;
+    background: #0057b8 !important;
+    border-color: #60a5fa !important;
+    box-shadow: 0 6px 18px rgba(0, 87, 184, 0.35) !important;
+  }
+
+  .nav-link[data-page="dashboard"]::before {
+    content: "🏠";
+  }
+
+  .nav-link[data-page="inventory"]::before {
+    content: "💊";
+  }
+
+  .nav-link[data-page="sales"]::before {
+    content: "🛒";
+  }
+
+  .nav-link[data-page="purchases"]::before {
+    content: "📦";
+  }
+
+  .nav-link[data-page="suppliers"]::before {
+    content: "🚚";
+  }
+
+  .nav-link[data-page="reports"]::before {
+    content: "📊";
+  }
+
+  .nav-link[data-page="users"]::before {
+    content: "👥";
+  }
+
+  .nav-link[data-page="backup"]::before {
+    content: "💾";
+  }
+
+  .sidebar-footer {
+    display: none !important;
+  }
+
+  .main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
+    padding: 12px !important;
+  }
+
+  .topbar {
+    margin-top: 0 !important;
+    padding: 10px 0 12px !important;
+    display: block !important;
+  }
+
+  .topbar-brand {
+    gap: 10px !important;
+  }
+
+  .topbar-logo {
+    width: 46px !important;
+    height: 46px !important;
+  }
+
+  .topbar h1 {
+    font-size: 24px !important;
+    line-height: 1.1 !important;
+  }
+
+  .topbar p {
+    font-size: 14px !important;
+  }
+
+  .top-actions {
+    margin-top: 10px !important;
+    display: flex !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .logo-sidebar-card span {
+    display: none !important;
+  }
+
+  .sidebar-logo {
+    width: 38px !important;
+    height: 38px !important;
+    max-width: 38px !important;
+  }
+
+  .nav-link {
+    font-size: 12px !important;
+    padding: 8px 10px !important;
+  }
+
+  .topbar-logo {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  .topbar h1 {
+    font-size: 21px !important;
+  }
+}

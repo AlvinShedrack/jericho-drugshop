@@ -203,7 +203,16 @@ function showPage(pageId) {
   document.querySelectorAll(".nav-link").forEach(link => link.classList.remove("active"));
 
   $(pageId).classList.add("active");
-  document.querySelector(`.nav-link[data-page="${pageId}"]`)?.classList.add("active");
+  const activeNavLink = document.querySelector(`.nav-link[data-page="${pageId}"]`);
+  activeNavLink?.classList.add("active");
+
+  if (window.innerWidth <= 768 && activeNavLink) {
+    activeNavLink.scrollIntoView({
+      behavior: "smooth",
+      inline: "center",
+      block: "nearest"
+    });
+  }
 
   const [title, subtitle] = pageMeta[pageId] || ["My Rx", ""];
   $("pageTitle").textContent = title;
