@@ -1,6 +1,6 @@
 {
   "name": "my-rx-software",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "description": "Offline pharmacy inventory, sales, purchases, reports, and desktop installer software.",
   "main": "electron/main.js",
   "scripts": {

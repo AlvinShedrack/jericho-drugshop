@@ -1619,7 +1619,7 @@ tr:last-child td {
     overflow-x: hidden;
   }
 
-  .app-shell {
+  .app-shell:not(.hidden) {
     display: block !important;
   }
 
@@ -1803,5 +1803,424 @@ tr:last-child td {
 
   .topbar h1 {
     font-size: 21px !important;
+  }
+}
+
+/* ==================================================
+   FANCY SIDEBAR EMOJIS + MODERN INTERFACE UPGRADE
+   Paste at the bottom of src/styles.css
+================================================== */
+
+/* Main fancy background */
+body {
+  background:
+    radial-gradient(circle at top left, rgba(0, 87, 184, 0.12), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(11, 143, 42, 0.10), transparent 32%),
+    #f4f8ff !important;
+}
+
+/* Sidebar better look */
+.sidebar {
+  background:
+    linear-gradient(180deg, #031b3f 0%, #062a5f 45%, #031b3f 100%) !important;
+  box-shadow: 12px 0 35px rgba(2, 19, 48, 0.22) !important;
+}
+
+/* Sidebar logo card */
+.logo-sidebar-card {
+  background: linear-gradient(145deg, #ffffff, #eef7ff) !important;
+  border: 1px solid rgba(96, 165, 250, 0.35) !important;
+  box-shadow: 0 16px 35px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Navigation base */
+.nav-link {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  padding: 13px 14px !important;
+  margin-bottom: 9px !important;
+  border-radius: 16px !important;
+  color: #dbeafe !important;
+  background: rgba(255, 255, 255, 0.065) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.01em !important;
+  transition: all 0.22s ease !important;
+  overflow: hidden !important;
+}
+
+/* Emoji circle */
+.nav-link::before {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  border-radius: 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 17px !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+/* Individual page emojis */
+.nav-link[data-page="dashboard"]::before {
+  content: "🏠";
+  background: linear-gradient(135deg, #2563eb, #60a5fa);
+}
+
+.nav-link[data-page="inventory"]::before {
+  content: "💊";
+  background: linear-gradient(135deg, #16a34a, #86efac);
+}
+
+.nav-link[data-page="sales"]::before {
+  content: "🛒";
+  background: linear-gradient(135deg, #f97316, #fdba74);
+}
+
+.nav-link[data-page="purchases"]::before {
+  content: "📦";
+  background: linear-gradient(135deg, #7c3aed, #c4b5fd);
+}
+
+.nav-link[data-page="suppliers"]::before {
+  content: "🚚";
+  background: linear-gradient(135deg, #0891b2, #67e8f9);
+}
+
+.nav-link[data-page="reports"]::before {
+  content: "📊";
+  background: linear-gradient(135deg, #0f766e, #5eead4);
+}
+
+.nav-link[data-page="users"]::before {
+  content: "👥";
+  background: linear-gradient(135deg, #be123c, #fda4af);
+}
+
+.nav-link[data-page="backup"]::before {
+  content: "💾";
+  background: linear-gradient(135deg, #475569, #cbd5e1);
+}
+
+/* Hover effect */
+.nav-link:hover {
+  transform: translateX(5px) !important;
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.13) !important;
+  border-color: rgba(147, 197, 253, 0.45) !important;
+}
+
+/* Active page effect */
+.nav-link.active {
+  color: #ffffff !important;
+  background:
+    linear-gradient(135deg, rgba(0, 87, 184, 0.98), rgba(37, 99, 235, 0.9)) !important;
+  border-color: rgba(147, 197, 253, 0.75) !important;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.32) !important;
+}
+
+.nav-link.active::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+}
+
+/* Main content fancy cards */
+.panel,
+.stat-card,
+.checkout-panel,
+.modal-card,
+.login-card {
+  border: 1px solid rgba(191, 219, 254, 0.85) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(14px) !important;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08) !important;
+  border-radius: 22px !important;
+}
+
+/* Topbar fancy */
+.topbar {
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(191, 219, 254, 0.8) !important;
+  border-radius: 22px !important;
+  padding: 16px 18px !important;
+  margin-bottom: 20px !important;
+  box-shadow: 0 12px 35px rgba(15, 23, 42, 0.07) !important;
+}
+
+.topbar h1 {
+  color: #061b3a !important;
+  font-weight: 900 !important;
+}
+
+.topbar p {
+  color: #64748b !important;
+}
+
+/* Topbar logo glow */
+.topbar-logo {
+  background: #ffffff !important;
+  border: 1px solid #bfdbfe !important;
+  box-shadow: 0 8px 20px rgba(0, 87, 184, 0.18) !important;
+}
+
+/* Stat card glow */
+.stat-card {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.stat-card::after {
+  content: "";
+  position: absolute;
+  top: -35px;
+  right: -35px;
+  width: 95px;
+  height: 95px;
+  border-radius: 50%;
+  background: rgba(0, 87, 184, 0.08);
+}
+
+.stat-card strong {
+  color: #0057b8 !important;
+  font-size: 26px !important;
+}
+
+.stat-card.success strong {
+  color: #0b8f2a !important;
+}
+
+.stat-card.warning strong {
+  color: #f97316 !important;
+}
+
+.stat-card.danger strong {
+  color: #dc2626 !important;
+}
+
+/* Buttons fancy */
+.primary-btn {
+  background: linear-gradient(135deg, #0057b8, #2563eb) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.28) !important;
+}
+
+.secondary-btn {
+  background: #eaf3ff !important;
+  color: #0057b8 !important;
+  border: 1px solid #bfdbfe !important;
+}
+
+.ghost-btn {
+  border: 1px solid #cbd5e1 !important;
+}
+
+/* Tables look cleaner */
+table {
+  border-radius: 16px !important;
+  overflow: hidden !important;
+}
+
+thead th {
+  background: linear-gradient(135deg, #0057b8, #064a96) !important;
+  color: #ffffff !important;
+}
+
+tbody tr:hover {
+  background: #f0f7ff !important;
+}
+
+/* Form inputs */
+input,
+select,
+textarea {
+  border: 1px solid #cbd5e1 !important;
+  background: #ffffff !important;
+  transition: all 0.2s ease !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: #0057b8 !important;
+  box-shadow: 0 0 0 4px rgba(0, 87, 184, 0.12) !important;
+}
+
+/* Mobile keeps fancy but compact */
+@media (max-width: 768px) {
+  .nav-link {
+    width: auto !important;
+    margin-bottom: 0 !important;
+    padding: 8px 12px !important;
+    border-radius: 999px !important;
+    gap: 7px !important;
+  }
+
+  .nav-link::before {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    font-size: 14px !important;
+    border-radius: 50% !important;
+  }
+
+  .nav-link:hover {
+    transform: none !important;
+  }
+
+  .nav-link.active::after {
+    display: none !important;
+  }
+
+  .topbar {
+    border-radius: 16px !important;
+    padding: 12px !important;
+  }
+
+  .panel,
+  .stat-card,
+  .checkout-panel {
+    border-radius: 18px !important;
+  }
+}
+
+/* =========================================
+   FIX SIDEBAR LOGO + NAVIGATION SPACING
+========================================= */
+
+.sidebar {
+  padding-top: 12px !important;
+}
+
+.logo-sidebar-card {
+  margin-bottom: 8px !important;
+  padding: 10px !important;
+}
+
+.sidebar-logo {
+  margin-bottom: 4px !important;
+}
+
+.logo-sidebar-card span {
+  margin-top: 2px !important;
+}
+
+/* Reduce space before first menu item */
+.sidebar nav {
+  margin-top: 4px !important;
+  padding-top: 0 !important;
+}
+
+/* Reduce spacing between menu buttons */
+.nav-link {
+  margin-bottom: 10px !important;
+}
+
+/* Optional: slightly reduce logo box height */
+.logo-sidebar-card {
+  min-height: auto !important;
+}
+/* =========================================
+   FIX MOBILE TOP LOGO POSITION AND SIZE
+========================================= */
+
+@media (max-width: 768px) {
+  .sidebar {
+    padding: 8px 12px 10px !important;
+  }
+
+  .logo-sidebar-card {
+    width: 100% !important;
+    height: 70px !important;
+    min-height: 70px !important;
+    max-height: 70px !important;
+    margin: 0 0 10px 0 !important;
+    padding: 6px 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
+  }
+
+  .sidebar-logo {
+    width: 150px !important;
+    max-width: 150px !important;
+    height: auto !important;
+    max-height: 58px !important;
+    object-fit: contain !important;
+    margin: 0 auto !important;
+    display: block !important;
+  }
+
+  .logo-sidebar-card span {
+    display: none !important;
+  }
+
+  .sidebar nav {
+    margin-top: 0 !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .sidebar-logo {
+    width: 145px !important;
+    max-width: 145px !important;
+    height: auto !important;
+    max-height: 56px !important;
+  }
+
+  .logo-sidebar-card {
+    height: 68px !important;
+    min-height: 68px !important;
+    max-height: 68px !important;
+  }
+}
+
+/* =========================================
+   LOGIN PROTECTION FIX
+   Prevent dashboard from showing before login
+========================================= */
+
+.hidden {
+  display: none !important;
+}
+
+#appShell.hidden {
+  display: none !important;
+}
+
+#loginScreen.hidden {
+  display: none !important;
+}
+
+/* Only show app when JavaScript confirms login */
+body:not(.is-authenticated) #appShell {
+  display: none !important;
+}
+
+body.is-authenticated #loginScreen {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  body:not(.is-authenticated) #appShell {
+    display: none !important;
+  }
+
+  body.is-authenticated #appShell:not(.hidden) {
+    display: block !important;
   }
 }

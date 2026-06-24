@@ -167,11 +167,16 @@ async function login(email, password) {
 function logout() {
   currentUser = null;
   localStorage.removeItem(SESSION_KEY);
+
+  document.body.classList.remove("is-authenticated");
+
   $("appShell").classList.add("hidden");
   $("loginScreen").classList.remove("hidden");
 }
 
 function showApp() {
+  document.body.classList.add("is-authenticated");
+  
   $("loginScreen").classList.add("hidden");
   $("appShell").classList.remove("hidden");
   $("currentUserText").innerHTML = `<strong>${escapeHtml(currentUser.name)}</strong><br>${escapeHtml(currentUser.role)}`;
@@ -759,8 +764,8 @@ async function addPurchaseLine() {
     unitCost
   });
 
-  $("purchaseQty").value = 1;
-  $("purchaseCost").value = 0;
+  $("purchaseQty").value = "";
+  $("purchaseCost").value = "";
   renderPurchaseLines();
 }
 
@@ -2204,7 +2209,10 @@ function bindEvents() {
         printElement("reportPrintable", "Sales Report");
       });
     }
-  $("exportPurchasesCsvBtn").addEventListener("click", exportPurchasesCsv);
+  const exportPurchasesCsvBtn = $("exportPurchasesCsvBtn");
+  if (exportPurchasesCsvBtn) {
+    exportPurchasesCsvBtn.addEventListener("click", exportPurchasesCsv);
+  }
 
   $("addUserBtn").addEventListener("click", () => openUserForm());
   $("userForm").addEventListener("submit", saveUser);
@@ -2249,16 +2257,26 @@ async function init() {
   await seedInitialData();
   bindEvents();
 
-  $("reportDate").value = todayISO();
+  if ($("reportDate")) {
+    $("reportDate").value = todayISO();
+  }
 
   const saved = localStorage.getItem(SESSION_KEY);
+
   if (saved) {
     try {
       currentUser = JSON.parse(saved);
-      showApp();
+
+      if (currentUser && currentUser.id && currentUser.role) {
+        showApp();
+      } else {
+        logout();
+      }
     } catch {
       logout();
     }
+  } else {
+    logout();
   }
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
@@ -2267,6 +2285,17 @@ async function init() {
 }
 
 init().catch(error => {
-  console.error(error);
-  showToast("App failed to start. Check console.");
+  console.error("Startup error:", error);
+
+  const realMessage = error && error.message
+    ? error.message
+    : String(error);
+
+  const toast = document.getElementById("toast");
+
+  if (typeof showToast === "function" && toast) {
+    showToast(realMessage);
+  } else {
+    alert(realMessage);
+  }
 });

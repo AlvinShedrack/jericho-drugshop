@@ -70,7 +70,6 @@
         <div class="top-actions">
           <button id="installBtn" class="secondary-btn hidden">Install App</button>
           <button id="printPageBtn" class="secondary-btn no-print">Print / Export PDF</button>
-          <span class="status-pill">Offline Ready</span>
         </div>
       </header>
 
@@ -218,9 +217,15 @@
       <section id="purchases" class="page">
         <div class="two-column sales-layout">
           <div class="panel">
-            <div class="panel-header">
-              <h2>Stock In / Purchases</h2>
-              <p>Record supplier purchases and increase stock automatically.</p>
+            <div class="panel-header split">
+              <div>
+                <h2>Stock In / Purchases</h2>
+                <p>Record supplier purchases and increase stock automatically.</p>
+              </div>
+
+              <button id="exportPurchasesCsvBtn" class="secondary-btn">
+                Export Purchases CSV
+              </button>
             </div>
             <div class="form-grid two">
               <div>
@@ -234,8 +239,8 @@
             </div>
             <div class="sale-add-row">
               <select id="purchaseMedicineSelect"></select>
-              <input id="purchaseQty" type="number" min="1" value="1" placeholder="Qty" />
-              <input id="purchaseCost" type="number" min="0" value="0" placeholder="Unit cost" />
+              <input id="purchaseQty" type="number" min="1" placeholder="Quantity" />
+              <input id="purchaseCost" type="number" min="0" placeholder="Unit cost" />
               <button id="addPurchaseLineBtn" class="secondary-btn">Add Line</button>
             </div>
             <div class="table-wrap">
