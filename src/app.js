@@ -2340,11 +2340,27 @@ function bindEvents() {
       showToast(error.message);
     }
   });
+  const mobileMenuHeader = document.querySelector(".logo-sidebar-card");
+  const sidebar = document.querySelector(".sidebar");
 
+  if (mobileMenuHeader && sidebar) {
+    mobileMenuHeader.addEventListener("click", () => {
+      if (window.innerWidth <= 768) {
+        sidebar.classList.toggle("mobile-menu-open");
+      }
+    });
+  }
   $("logoutBtn").addEventListener("click", logout);
 
   document.querySelectorAll(".nav-link").forEach(button => {
-    button.addEventListener("click", () => showPage(button.dataset.page));
+    button.addEventListener("click", () => {
+      showPage(button.dataset.page);
+
+      const sidebar = document.querySelector(".sidebar");
+      if (window.innerWidth <= 768 && sidebar) {
+        sidebar.classList.remove("mobile-menu-open");
+      }
+    });
   });
 
   document.querySelectorAll("[data-close]").forEach(button => {
