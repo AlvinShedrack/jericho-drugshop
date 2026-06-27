@@ -1,4 +1,4 @@
-const CACHE_NAME = "my-rx-cache-v7";
+const CACHE_NAME = "my-rx-cache-v8";
 
 const FILES_TO_CACHE = [
   "./",
