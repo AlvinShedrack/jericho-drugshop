@@ -4,6 +4,7 @@ const STORE = {
   medicines: "medicines",
   sales: "sales",
   purchases: "purchases",
+  expenses: "expenses",
   auditLogs: "auditLogs"
 };
 
@@ -11,6 +12,7 @@ const SESSION_KEY = "my_rx_session_user";
 let currentUser = null;
 let cart = [];
 let purchaseLines = [];
+let currentReceiptSale = null;
 let deferredInstallPrompt = null;
 
 const BRAND = {
@@ -127,12 +129,28 @@ function todayISO() {
 }
 
 function isSameDay(isoDate, dateString) {
-  return String(isoDate || "").slice(0, 10) === dateString;
+  const left = String(isoDate || "").slice(0, 10);
+  const right = toIsoDate(dateString) || String(dateString || "").slice(0, 10);
+
+  return left === right;
 }
 
 function daysUntil(dateString) {
-  const today = new Date(todayISO());
-  const target = new Date(dateString);
+  if (!dateString) return -999999;
+
+  const isoDate = toIsoDate(dateString);
+
+  if (!isoDate) {
+    return -999999;
+  }
+
+  const today = new Date(`${todayISO()}T00:00:00`);
+  const target = new Date(`${isoDate}T00:00:00`);
+
+  if (Number.isNaN(target.getTime())) {
+    return -999999;
+  }
+
   return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
 }
 
@@ -276,18 +294,29 @@ function showApp() {
   applyRoleAccess();
   showPage("dashboard");
   refreshAll();
+
+  if (typeof startAutoSync === "function") {
+    startAutoSync();
+  }
 }
 
 function applyRoleAccess() {
-  const adminOrDirector = ["Administrator", "Director"].includes(currentUser?.role);
+  const manager = ["Administrator", "Director"].includes(currentUser?.role);
   const directorOnly = currentUser?.role === "Director";
 
+  // Admin / Director only
   document.querySelectorAll(".admin-only").forEach(el => {
-    el.classList.toggle("hidden", !adminOrDirector);
+    el.classList.toggle("hidden", !manager);
   });
 
+  // Director only
   document.querySelectorAll(".director-only").forEach(el => {
     el.classList.toggle("hidden", !directorOnly);
+  });
+
+  // Old class still used in your HTML: hide it from Dispenser
+  document.querySelectorAll(".pharmacist-admin-only").forEach(el => {
+    el.classList.toggle("hidden", !manager);
   });
 
   const saleType = $("saleType");
@@ -310,7 +339,7 @@ function applyRoleAccess() {
 
   const usersNav = document.querySelector('.nav-link[data-page="users"]');
   if (usersNav) {
-    usersNav.classList.toggle("hidden", !adminOrDirector);
+    usersNav.classList.toggle("hidden", !manager);
   }
 }
 
@@ -538,6 +567,9 @@ async function saveMedicine(event) {
   closeModal("medicineModal");
   showToast("Medicine saved.");
   await refreshAll();
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
 }
 
 async function deleteMedicine(id) {
@@ -549,6 +581,9 @@ async function deleteMedicine(id) {
   await writeAudit("medicine_deleted", { id, name: med.name });
   showToast("Medicine deleted.");
   await refreshAll();
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
 }
 
 async function renderSuppliers() {
@@ -642,6 +677,9 @@ async function saveSupplier(event) {
   closeModal("supplierModal");
   showToast("Supplier saved.");
   await refreshAll();
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
 }
 
 async function deleteSupplier(id) {
@@ -653,6 +691,9 @@ async function deleteSupplier(id) {
   await writeAudit("supplier_deleted", { id, name: supplier.name });
   showToast("Supplier deleted.");
   await refreshAll();
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
 }
 
 async function addToCart() {
@@ -781,9 +822,14 @@ async function completeSale() {
   renderCart();
   showToast(`Sale completed. Change: ${formatMoney(changeGiven)}`);
   await refreshAll();
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
 }
 
 function showReceipt(sale) {
+  currentReceiptSale = sale;
+
   const subtotal = Number(sale.subtotal || sale.total || 0);
   const discount = Number(sale.discount || 0);
   const total = Number(sale.total || 0);
@@ -945,6 +991,7 @@ async function completePurchase() {
 
   const supplierId = Number($("purchaseSupplierSelect").value);
   const invoiceNo = $("purchaseInvoice").value.trim() || `PINV-${Date.now()}`;
+  const purchaseDate = normalizeDateInput($("purchaseDate").value || formatDateDisplay(new Date().toISOString()));
   const total = purchaseLines.reduce((sum, item) => sum + (item.qty * item.unitCost), 0);
 
   for (const line of purchaseLines) {
@@ -959,19 +1006,25 @@ async function completePurchase() {
   await addRecord(STORE.purchases, {
     supplierId,
     invoiceNo,
+    purchaseDate,
     total,
     lines: purchaseLines.map(line => ({ ...line })),
     createdBy: currentUser.id,
     createdByName: currentUser.name,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   });
 
   await writeAudit("purchase_saved", { invoiceNo, total });
   purchaseLines = [];
   $("purchaseInvoice").value = "";
+  $("purchaseDate").value = "";
   renderPurchaseLines();
   showToast("Purchase saved and stock updated.");
   await refreshAll();
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
 }
 
 async function renderReports() {
@@ -1143,6 +1196,9 @@ async function saveUser(event) {
   closeModal("userModal");
   showToast("User saved.");
   await refreshAll();
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
 }
 
 async function deleteUser(id) {
@@ -1156,6 +1212,9 @@ async function deleteUser(id) {
   await writeAudit("user_deleted", { id, email: user.email });
   showToast("User deleted.");
   await refreshAll();
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
 }
 
 function downloadFile(filename, content, type = "application/json") {
@@ -2252,6 +2311,7 @@ async function refreshAll() {
   await renderDashboardMedicineSearch();
   renderCart();
   renderPurchaseLines();
+  await renderPurchaseExpenses();
 }
 function printElement(elementId, title = "Print") {
   const element = $(elementId);
@@ -2331,6 +2391,138 @@ function printElement(elementId, title = "Print") {
   printWindow.document.close();
 }
 
+async function markReceiptAsPrinted() {
+  if (!currentReceiptSale || !currentReceiptSale.id) return;
+
+  const sale = await getById(STORE.sales, currentReceiptSale.id);
+  if (!sale) return;
+
+  if (!sale.printedAt) {
+    sale.printedAt = new Date().toISOString();
+    sale.locked = true;
+    sale.lockedReason = "Receipt printed";
+    sale.updatedAt = new Date().toISOString();
+
+    await putRecord(STORE.sales, sale);
+
+    await writeAudit("receipt_printed_sale_locked", {
+      saleId: sale.id,
+      receiptNo: sale.receiptNo,
+      printedBy: currentUser?.name,
+      role: currentUser?.role
+    });
+
+    currentReceiptSale = sale;
+  }
+}
+
+async function savePurchaseExpense(event) {
+  event.preventDefault();
+
+  if (!requireRole(["Administrator", "Director"])) {
+    showToast("Only Administrator or Director can add expenses.");
+    return;
+  }
+
+  const expenseDate = normalizeDateInput($("expenseDate").value);
+  const category = $("expenseCategory").value;
+  const amount = Number($("expenseAmount").value || 0);
+  const paymentMethod = $("expensePaymentMethod").value;
+  const description = $("expenseDescription").value.trim();
+
+  if (!expenseDate || !category || amount <= 0) {
+    showToast("Expense date, category, and amount are required.");
+    return;
+  }
+
+  await addRecord(STORE.expenses, {
+    expenseDate,
+    category,
+    amount,
+    paymentMethod,
+    description,
+    createdBy: currentUser.id,
+    createdByName: currentUser.name,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+
+  await writeAudit("expense_created", {
+    category,
+    amount,
+    expenseDate
+  });
+
+  $("expenseForm").reset();
+  $("expenseDate").value = formatDateDisplay(new Date().toISOString());
+
+  showToast("Expense saved.");
+  await refreshAll();
+
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
+}
+
+async function renderPurchaseExpenses() {
+  const expenses = await getAll(STORE.expenses);
+
+  const sorted = expenses.sort((a, b) => {
+    const dateA = new Date(toIsoDate(a.expenseDate) || a.createdAt || 0);
+    const dateB = new Date(toIsoDate(b.expenseDate) || b.createdAt || 0);
+    return dateB - dateA;
+  });
+
+  const total = sorted.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+  $("purchaseExpensesTotal").textContent = formatMoney(total);
+
+  $("purchaseExpensesTable").innerHTML = sorted.length ? sorted.map(expense => `
+    <tr>
+      <td>${escapeHtml(formatDateDisplay(expense.expenseDate))}</td>
+      <td>${escapeHtml(expense.category)}</td>
+      <td>${escapeHtml(expense.description || "")}</td>
+      <td>${escapeHtml(expense.paymentMethod || "")}</td>
+      <td>${formatMoney(expense.amount)}</td>
+      <td>
+        ${requireRole(["Administrator", "Director"]) ? `
+          <button class="table-btn danger" data-action="delete-expense" data-id="${expense.id}">
+            Delete
+          </button>
+        ` : ""}
+      </td>
+    </tr>
+  `).join("") : `<tr><td colspan="6">No expenses recorded yet.</td></tr>`;
+}
+
+async function deletePurchaseExpense(id) {
+  if (!requireRole(["Administrator", "Director"])) {
+    showToast("Only Administrator or Director can delete expenses.");
+    return;
+  }
+
+  const expense = await getById(STORE.expenses, id);
+  if (!expense) return;
+
+  if (!confirm(`Delete expense ${expense.category} - ${formatMoney(expense.amount)}?`)) {
+    return;
+  }
+
+  await deleteRecord(STORE.expenses, id);
+
+  await writeAudit("expense_deleted", {
+    id,
+    category: expense.category,
+    amount: expense.amount
+  });
+
+  showToast("Expense deleted.");
+  await refreshAll();
+
+  if (typeof queueAutoSync === "function") {
+    queueAutoSync();
+  }
+}
 function bindEvents() {
   $("loginForm").addEventListener("submit", async event => {
     event.preventDefault();
@@ -2378,11 +2570,17 @@ function bindEvents() {
   $("addToCartBtn").addEventListener("click", addToCart);
   $("completeSaleBtn").addEventListener("click", completeSale);
   $("clearCartBtn").addEventListener("click", () => { cart = []; renderCart(); });
-  $("printReceiptBtn").addEventListener("click", () => {
+  $("printReceiptBtn").addEventListener("click", async () => {
+    await markReceiptAsPrinted();
     printElement("receiptContent", "Sales Receipt");
+
+    if (isDispenser()) {
+      showToast("Receipt printed. This sale is now locked.");
+    }
   });
   $("printPageBtn")?.addEventListener("click", printOrExportPagePdf);
 
+  $("expenseForm").addEventListener("submit", savePurchaseExpense);
   $("addPurchaseLineBtn").addEventListener("click", addPurchaseLine);
   $("completePurchaseBtn").addEventListener("click", completePurchase);
   $("clearPurchaseBtn").addEventListener("click", () => { purchaseLines = []; renderPurchaseLines(); });
@@ -2407,6 +2605,16 @@ function bindEvents() {
   $("exportBackupBtn").addEventListener("click", exportBackup);
   $("importBackupInput").addEventListener("change", event => importBackup(event.target.files[0]));
 
+  document.querySelectorAll(".sync-now-btn").forEach(button => {
+    button.addEventListener("click", () => {
+      if (typeof syncNow === "function") {
+        syncNow();
+      } else {
+        showToast("Sync file is not loaded.");
+      }
+    });
+  });
+
   $("installBtn").addEventListener("click", async () => {
     if (!deferredInstallPrompt) return;
     deferredInstallPrompt.prompt();
@@ -2428,6 +2636,7 @@ function bindEvents() {
     if (action === "delete-supplier") deleteSupplier(id);
     if (action === "remove-cart") { cart.splice(index, 1); renderCart(); }
     if (action === "remove-purchase-line") { purchaseLines.splice(index, 1); renderPurchaseLines(); }
+    if (action === "delete-expense") deletePurchaseExpense(id);
     if (action === "edit-user") openUserForm(id);
     if (action === "delete-user") deleteUser(id);
   });
@@ -2451,11 +2660,16 @@ async function init() {
 
   attachDateMask("expiryDate");
   attachDateMask("reportDate");
+  attachDateMask("purchaseDate");
+  attachDateMask("expenseDate");
 
   if ($("reportDate")) {
     $("reportDate").value = todayISO();
   }
 
+  if ($("expenseDate")) {
+    $("expenseDate").value = formatDateDisplay(new Date().toISOString());
+  }
   const saved = localStorage.getItem(SESSION_KEY);
 
   if (saved) {

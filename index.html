@@ -65,6 +65,7 @@
         </div>
         <div class="top-actions">
           <button id="installBtn" class="secondary-btn hidden">Install App</button>
+          <button type="button" class="secondary-btn sync-now-btn no-print">Sync Now</button>
           <button id="printPageBtn" class="secondary-btn no-print">Print / Export PDF</button>
         </div>
       </header>
@@ -237,14 +238,20 @@
                 Export Purchases CSV
               </button>
             </div>
-            <div class="form-grid two">
+            <div class="form-grid three">
               <div>
                 <label>Supplier</label>
                 <select id="purchaseSupplierSelect"></select>
               </div>
+
               <div>
                 <label>Invoice Number</label>
                 <input id="purchaseInvoice" placeholder="INV-001" />
+              </div>
+
+              <div>
+                <label>Purchase Date</label>
+                <input id="purchaseDate" type="text" placeholder="DD-MM-YYYY" />
               </div>
             </div>
             <div class="sale-add-row">
@@ -267,6 +274,82 @@
             <div class="checkout-line total"><span>Total Cost</span><strong id="purchaseTotal">USh 0</strong></div>
             <button id="completePurchaseBtn" class="primary-btn full pharmacist-admin-only">Save Purchase</button>
             <button id="clearPurchaseBtn" class="ghost-btn full">Clear Lines</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header split">
+            <div>
+              <h2>Purchase Expenses</h2>
+              <p>Record extra business expenses such as transport, rent, packaging, repairs, internet, and utilities.</p>
+            </div>
+          </div>
+
+          <form id="expenseForm" class="form-grid three">
+            <div>
+              <label>Expense Date</label>
+              <input id="expenseDate" type="text" placeholder="DD-MM-YYYY" required />
+            </div>
+
+            <div>
+              <label>Expense Category</label>
+              <select id="expenseCategory" required>
+                <option value="">Select category</option>
+                <option>Transport</option>
+                <option>Rent</option>
+                <option>Utilities</option>
+                <option>Internet / Airtime</option>
+                <option>Packaging</option>
+                <option>Repairs</option>
+                <option>Cleaning</option>
+                <option>Staff Welfare</option>
+                <option>Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Amount</label>
+              <input id="expenseAmount" type="number" min="0" placeholder="Amount" required />
+            </div>
+
+            <div>
+              <label>Payment Method</label>
+              <select id="expensePaymentMethod">
+                <option>Cash</option>
+                <option>Mobile Money</option>
+                <option>Bank</option>
+                <option>Credit</option>
+              </select>
+            </div>
+
+            <div class="span-two">
+              <label>Description / Notes</label>
+              <input id="expenseDescription" placeholder="Example: Transport for stock delivery" />
+            </div>
+
+            <div class="form-actions span-three">
+              <button type="submit" class="primary-btn">Save Expense</button>
+            </div>
+          </form>
+
+          <div class="checkout-line total">
+            <span>Total Expenses</span>
+            <strong id="purchaseExpensesTotal">USh 0</strong>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th>Payment</th>
+                  <th>Amount</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="purchaseExpensesTable"></tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -428,10 +511,18 @@
           </div>
           <div class="backup-actions">
             <button id="exportBackupBtn" class="primary-btn">Export Full Backup</button>
+
             <label class="file-btn">
               Import Backup
               <input id="importBackupInput" type="file" accept=".json,application/json" />
             </label>
+
+            <button id="syncNowBtn" class="secondary-btn sync-now-btn">Sync Now</button>
+          </div>
+
+          <div class="warning-box">
+            <strong>Sync Status</strong><br>
+            <span id="syncStatusText">Not synced yet.</span>
           </div>
           <div class="warning-box">
             Importing a backup will add or update records in this browser/device. Keep backups safe because pharmacy business data is sensitive.
@@ -531,6 +622,12 @@
   <footer class="app-footer">Developed by Alvin Shedrack © 2026</footer>
   <script src="./src/db.js"></script>
   <script src="https://unpkg.com/html2pdf.js@0.9.2/dist/html2pdf.bundle.min.js"></script>
+  <button type="button" class="floating-sync-btn sync-now-btn no-print">
+    🔄 Sync
+  </button>  
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./src/db.js"></script>
+  <script src="./src/sync.js"></script>
   <script src="./src/app.js"></script>
 </body>
 </html>

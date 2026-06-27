@@ -2560,3 +2560,52 @@ input[placeholder="DD-MM-YYYY"] {
     border: 1px solid #fecaca !important;
   }
 }
+
+/* =========================================
+   EASY ACCESS SYNC BUTTONS
+========================================= */
+
+.quick-sync-status {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.floating-sync-btn {
+  display: none;
+}
+
+body.is-authenticated .floating-sync-btn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .top-actions .sync-now-btn {
+    display: none !important;
+  }
+
+  body.is-authenticated .floating-sync-btn {
+    display: inline-flex !important;
+    position: fixed !important;
+    right: 14px !important;
+    bottom: 14px !important;
+    z-index: 3000 !important;
+    border: none !important;
+    border-radius: 999px !important;
+    padding: 13px 18px !important;
+    background: #0057b8 !important;
+    color: #ffffff !important;
+    font-weight: 900 !important;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25) !important;
+  }
+
+  body.is-authenticated .floating-sync-btn:disabled {
+    opacity: 0.65 !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .floating-sync-btn {
+    display: none !important;
+  }
+}
