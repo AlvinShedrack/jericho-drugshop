@@ -2609,3 +2609,67 @@ body.is-authenticated .floating-sync-btn {
     display: none !important;
   }
 }
+
+/* ================================
+   MOBILE ONLY: SYNC BUTTON + TOAST FIX
+   Paste at the very bottom of styles.css
+================================ */
+
+@media (max-width: 768px) {
+
+  /* Hide the long top header sync button on mobile */
+  .top-actions .sync-now-btn {
+    display: none !important;
+  }
+
+  /* Make any visible sync button shorter on mobile */
+  .sync-now-btn {
+    min-width: auto !important;
+    width: auto !important;
+    max-width: fit-content !important;
+    padding: 7px 11px !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    border-radius: 999px !important;
+    white-space: nowrap !important;
+  }
+
+  /* Show a small floating sync button on mobile */
+  body.is-authenticated .floating-sync-btn {
+    display: inline-flex !important;
+    position: fixed !important;
+    right: 12px !important;
+    bottom: 44px !important;
+    z-index: 4000 !important;
+
+    width: auto !important;
+    min-width: auto !important;
+    max-width: fit-content !important;
+    height: 36px !important;
+    padding: 7px 11px !important;
+
+    border: none !important;
+    border-radius: 999px !important;
+    background: #0057b8 !important;
+    color: #ffffff !important;
+    font-size: 12px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24) !important;
+  }
+
+  /* Move sync/toast notification below the mobile header */
+  .toast {
+    top: 92px !important;
+    left: 12px !important;
+    right: 12px !important;
+    max-width: none !important;
+    text-align: center !important;
+    z-index: 9999 !important;
+  }
+
+  .toast.show {
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+  }
+}
