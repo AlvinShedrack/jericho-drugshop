@@ -16,6 +16,10 @@ const SYNC_STORES = [
 const DEVICE_ID_KEY = "jericho_device_id";
 const LAST_SYNC_KEY = "jericho_last_sync";
 
+let syncRunning = false;
+let autoSyncStarted = false;
+let queuedSyncTimer = null;
+
 function getDeviceId() {
   let deviceId = localStorage.getItem(DEVICE_ID_KEY);
 
@@ -25,6 +29,13 @@ function getDeviceId() {
   }
 
   return deviceId;
+}
+
+function getRecordTime(record, fallbackDate = null) {
+  const value = record?.updatedAt || record?.createdAt || fallbackDate || 0;
+  const time = new Date(value).getTime();
+
+  return Number.isNaN(time) ? 0 : time;
 }
 
 function setSyncStatus(message) {
@@ -39,23 +50,84 @@ function setSyncStatus(message) {
   }
 }
 
+function updateSyncButtons(text, busy = false) {
+  document.querySelectorAll(".sync-now-btn").forEach(button => {
+    button.textContent = busy ? "Syncing..." : "🔄 Sync";
+    button.disabled = busy;
+  });
+
+  const syncStatusText = document.getElementById("syncStatusText");
+  if (syncStatusText) {
+    syncStatusText.textContent = text;
+  }
+}
+
 function prepareRecordForCloud(storeName, record) {
+  const now = new Date().toISOString();
+
+  const cleanRecord = {
+    ...record,
+    updatedAt: record.updatedAt || record.createdAt || now
+  };
+
   return {
     store_name: storeName,
-    local_id: String(record.id),
+    local_id: String(cleanRecord.id),
     device_id: getDeviceId(),
-    data: record,
-    updated_at: record.updatedAt || record.createdAt || new Date().toISOString(),
+    data: cleanRecord,
+    updated_at: cleanRecord.updatedAt,
     deleted: false
   };
 }
 
+async function pullCloudStoreToLocal(storeName) {
+  const { data, error } = await cloudClient
+    .from("cloud_records")
+    .select("*")
+    .eq("store_name", storeName)
+    .order("updated_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  let imported = 0;
+
+  for (const row of data || []) {
+    if (row.deleted) continue;
+    if (!row.data) continue;
+
+    const cloudRecord = {
+      ...row.data,
+      id: row.data.id ?? Number(row.local_id)
+    };
+
+    if (cloudRecord.id === undefined || cloudRecord.id === null) {
+      continue;
+    }
+
+    const localRecord = await getById(storeName, cloudRecord.id);
+
+    if (!localRecord) {
+      await putRecord(storeName, cloudRecord);
+      imported++;
+      continue;
+    }
+
+    const localTime = getRecordTime(localRecord);
+    const cloudTime = getRecordTime(cloudRecord, row.updated_at);
+
+    if (cloudTime > localTime) {
+      await putRecord(storeName, cloudRecord);
+      imported++;
+    }
+  }
+
+  return imported;
+}
+
 async function pushLocalStoreToCloud(storeName) {
   const localRecords = await getAll(storeName);
-
-  if (!localRecords.length) {
-    return 0;
-  }
 
   const cloudRows = localRecords
     .filter(record => record.id !== undefined && record.id !== null)
@@ -78,56 +150,24 @@ async function pushLocalStoreToCloud(storeName) {
   return cloudRows.length;
 }
 
-async function pullCloudStoreToLocal(storeName) {
-  const { data, error } = await cloudClient
-    .from("cloud_records")
-    .select("*")
-    .eq("store_name", storeName);
+async function pullAllCloudDataFirst() {
+  let pulled = 0;
 
-  if (error) {
-    throw error;
+  for (const storeName of SYNC_STORES) {
+    pulled += await pullCloudStoreToLocal(storeName);
   }
 
-  let imported = 0;
-
-  for (const row of data || []) {
-    if (row.deleted) continue;
-
-    const cloudRecord = row.data;
-    const localRecord = await getById(storeName, cloudRecord.id);
-
-    if (!localRecord) {
-      await putRecord(storeName, cloudRecord);
-      imported++;
-      continue;
-    }
-
-    const localTime = new Date(localRecord.updatedAt || localRecord.createdAt || 0).getTime();
-    const cloudTime = new Date(cloudRecord.updatedAt || cloudRecord.createdAt || row.updated_at || 0).getTime();
-
-    if (cloudTime > localTime) {
-      await putRecord(storeName, cloudRecord);
-      imported++;
-    }
-  }
-
-  return imported;
+  return pulled;
 }
 
-let syncRunning = false;
-let autoSyncStarted = false;
-let queuedSyncTimer = null;
+async function pushAllLocalData() {
+  let pushed = 0;
 
-function updateSyncButtons(text, busy = false) {
-  document.querySelectorAll(".sync-now-btn").forEach(button => {
-    button.textContent = busy ? "Syncing..." : "🔄 Sync";
-    button.disabled = busy;
-  });
-
-  const syncStatusText = document.getElementById("syncStatusText");
-  if (syncStatusText) {
-    syncStatusText.textContent = text;
+  for (const storeName of SYNC_STORES) {
+    pushed += await pushLocalStoreToCloud(storeName);
   }
+
+  return pushed;
 }
 
 function queueAutoSync(delay = 2500) {
@@ -144,15 +184,12 @@ function startAutoSync() {
   if (autoSyncStarted) return;
   autoSyncStarted = true;
 
-  // Sync shortly after login
   queueAutoSync(3000);
 
-  // Sync when internet comes back
   window.addEventListener("online", () => {
     queueAutoSync(1000);
   });
 
-  // Sync every 3 minutes while app is open
   setInterval(() => {
     if (navigator.onLine) {
       syncNow();
@@ -164,43 +201,70 @@ async function syncNow() {
   if (syncRunning) return;
 
   if (!navigator.onLine) {
-    setSyncStatus("Offline. Connect to internet to sync.");
-    updateSyncButtons("Offline. Connect to internet to sync.", false);
+    const message = "Offline. Connect to internet to sync.";
+    setSyncStatus(message);
+    updateSyncButtons(message, false);
     return;
   }
 
   syncRunning = true;
-  updateSyncButtons("Syncing data...", true);
-  setSyncStatus("Syncing data...");
+  updateSyncButtons("Fetching cloud data first...", true);
+  setSyncStatus("Fetching cloud data first...");
 
   try {
-    let pushed = 0;
-    let pulled = 0;
+    // 1. IMPORTANT: download Supabase data first
+    const pulledBeforePush = await pullAllCloudDataFirst();
 
-    for (const storeName of SYNC_STORES) {
-      pushed += await pushLocalStoreToCloud(storeName);
+    if (typeof refreshAll === "function") {
+      await refreshAll();
     }
 
-    for (const storeName of SYNC_STORES) {
-      pulled += await pullCloudStoreToLocal(storeName);
+    // 2. After local app has received cloud data, upload local records
+    updateSyncButtons("Uploading local changes...", true);
+    setSyncStatus("Uploading local changes...");
+
+    const pushed = await pushAllLocalData();
+
+    // 3. Pull again after upload to make sure this device has final cloud state
+    updateSyncButtons("Finalizing sync...", true);
+    setSyncStatus("Finalizing sync...");
+
+    const pulledAfterPush = await pullAllCloudDataFirst();
+
+    if (typeof refreshAll === "function") {
+      await refreshAll();
     }
 
     const now = new Date().toLocaleString();
     localStorage.setItem(LAST_SYNC_KEY, now);
 
-    const message = `Sync complete. Uploaded ${pushed}, downloaded ${pulled}. Last sync: ${now}`;
+    const totalPulled = pulledBeforePush + pulledAfterPush;
+
+    const message = `Sync complete. Downloaded ${totalPulled}, uploaded ${pushed}. Last sync: ${now}`;
 
     setSyncStatus(message);
     updateSyncButtons(message, false);
 
-    if (typeof refreshAll === "function") {
-      await refreshAll();
-    }
   } catch (error) {
     console.error("Sync error:", error);
-    setSyncStatus("Sync failed. Check internet or Supabase settings.");
-    updateSyncButtons("Sync failed. Check internet or Supabase settings.", false);
+
+    const message = error?.message
+      ? `Sync failed: ${error.message}`
+      : "Sync failed. Check internet or Supabase settings.";
+
+    setSyncStatus(message);
+    updateSyncButtons(message, false);
+
   } finally {
     syncRunning = false;
   }
 }
+
+document.addEventListener("click", event => {
+  const button = event.target.closest(".sync-now-btn");
+
+  if (!button) return;
+
+  event.preventDefault();
+  syncNow();
+});
