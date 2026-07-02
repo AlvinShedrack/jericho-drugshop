@@ -593,7 +593,7 @@ async function deleteMedicine(id) {
       await markCloudRecordDeleted(STORE.medicines, id);
     }
 
-    await deleteRecord(STORE.medicines, id);
+    await deleteEverywhere(STORE.medicines, id);
     await writeAudit("medicine_deleted", { id, name: med.name });
 
     showToast("Medicine deleted.");
@@ -717,7 +717,7 @@ async function deleteSupplier(id) {
       await markCloudRecordDeleted(STORE.suppliers, id);
     }
 
-    await deleteRecord(STORE.suppliers, id);
+    await deleteEverywhere(STORE.medicines, id);
     await writeAudit("supplier_deleted", { id, name: supplier.name });
 
     showToast("Supplier deleted.");
@@ -1251,7 +1251,7 @@ async function deleteUser(id) {
       await markCloudRecordDeleted(STORE.users, id);
     }
 
-    await deleteRecord(STORE.users, id);
+    await deleteEverywhere(STORE.users, id);
     await writeAudit("user_deleted", { id, email: user.email });
 
     showToast("User deleted.");
@@ -2557,7 +2557,7 @@ async function deletePurchaseExpense(id) {
     return;
   }
 
-  await deleteRecord(STORE.expenses, id);
+  await deleteEverywhere(STORE.expenses, id);
 
   await writeAudit("expense_deleted", {
     id,

@@ -105,6 +105,21 @@ async function markCloudRecordDeleted(storeName, id) {
     throw error;
   }
 }
+async function deleteEverywhere(storeName, id) {
+  const now = new Date().toISOString();
+
+  // First mark it deleted in Supabase
+  if (navigator.onLine && typeof markCloudRecordDeleted === "function") {
+    await markCloudRecordDeleted(storeName, id);
+  } else {
+    throw new Error("You are offline. Connect to internet before deleting this record.");
+  }
+
+  // Then delete it locally
+  await deleteRecord(storeName, id);
+
+  return now;
+}
 async function pullCloudStoreToLocal(storeName) {
   const { data, error } = await cloudClient
     .from("cloud_records")
@@ -237,28 +252,18 @@ async function syncNow() {
   }
 
   syncRunning = true;
-  updateSyncButtons("Fetching cloud data first...", true);
-  setSyncStatus("Fetching cloud data first...");
+  updateSyncButtons("Uploading local changes first...", true);
+  setSyncStatus("Uploading local changes first...");
 
   try {
-    // 1. IMPORTANT: download Supabase data first
-    const pulledBeforePush = await pullAllCloudDataFirst();
-
-    if (typeof refreshAll === "function") {
-      await refreshAll();
-    }
-
-    // 2. After local app has received cloud data, upload local records
-    updateSyncButtons("Uploading local changes...", true);
-    setSyncStatus("Uploading local changes...");
-
+    // 1. Upload local changes first so edits do not get overwritten by old cloud data
     const pushed = await pushAllLocalData();
 
-    // 3. Pull again after upload to make sure this device has final cloud state
-    updateSyncButtons("Finalizing sync...", true);
-    setSyncStatus("Finalizing sync...");
+    // 2. Then download final cloud data
+    updateSyncButtons("Downloading latest cloud data...", true);
+    setSyncStatus("Downloading latest cloud data...");
 
-    const pulledAfterPush = await pullAllCloudDataFirst();
+    const pulled = await pullAllCloudDataFirst();
 
     if (typeof refreshAll === "function") {
       await refreshAll();
@@ -267,9 +272,7 @@ async function syncNow() {
     const now = new Date().toLocaleString();
     localStorage.setItem(LAST_SYNC_KEY, now);
 
-    const totalPulled = pulledBeforePush + pulledAfterPush;
-
-    const message = `Sync complete. Downloaded ${totalPulled}, uploaded ${pushed}. Last sync: ${now}`;
+    const message = `Sync complete. Uploaded ${pushed}, downloaded ${pulled}. Last sync: ${now}`;
 
     setSyncStatus(message);
     updateSyncButtons(message, false);
