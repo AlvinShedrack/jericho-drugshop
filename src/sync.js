@@ -74,21 +74,24 @@ function updateSyncButtons(text, busy = false) {
 
 function prepareRecordForCloud(storeName, record) {
   const now = new Date().toISOString();
+  const recordId = record?.id ?? record?.local_id ?? null;
 
   const cleanRecord = {
     ...record,
+    id: recordId,
     updatedAt: record.updatedAt || record.createdAt || now
   };
 
   return {
     store_name: storeName,
-    local_id: String(cleanRecord.id),
+    local_id: recordId === null || recordId === undefined || recordId === "" ? "" : String(recordId),
     device_id: getDeviceId(),
     data: cleanRecord,
     updated_at: cleanRecord.updatedAt,
     deleted: false
   };
 }
+
 async function markCloudRecordDeleted(storeName, id) {
   const now = new Date().toISOString();
 

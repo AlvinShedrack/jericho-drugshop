@@ -185,7 +185,7 @@ function showToast(message) {
   toast.classList.add("show");
 
   setTimeout(() => {
-    if (toast) toast.classList.remove("show");
+    toast.classList.remove("show");
   }, 2600);
 }
 
@@ -210,7 +210,12 @@ function supplierName(suppliers, id) {
   return supplier ? supplier.name : "Not set";
 }
 async function deleteCloudRecord(storeName, id) {
-  const { error } = await cloudClient
+  if (typeof markCloudRecordDeleted === "function") {
+    await markCloudRecordDeleted(storeName, id);
+    return;
+  }
+
+  const { error } = await window.cloudClient
     .from("cloud_records")
     .delete()
     .eq("store_name", storeName)
@@ -614,9 +619,9 @@ async function deleteMedicine(id) {
     showToast("Medicine deleted.");
     await refreshAll();
 
-    // IMPORTANT:
-    // Do NOT call queueAutoSync() after deleting.
-    // It can download the old cloud copy again.
+    if (typeof queueAutoSync === "function") {
+      queueAutoSync();
+    }
   } catch (error) {
     console.error("Delete medicine error:", error);
     showToast(error.message || "Medicine delete failed.");
@@ -738,7 +743,9 @@ async function deleteSupplier(id) {
     showToast("Supplier deleted.");
     await refreshAll();
 
-    // Do NOT call queueAutoSync() here.
+    if (typeof queueAutoSync === "function") {
+      queueAutoSync();
+    }
   } catch (error) {
     console.error("Delete supplier error:", error);
     showToast(error.message || "Supplier delete failed.");
@@ -1293,7 +1300,9 @@ async function deleteUser(id) {
     showToast("User deleted.");
     await refreshAll();
 
-    // Do NOT call queueAutoSync() here.
+    if (typeof queueAutoSync === "function") {
+      queueAutoSync();
+    }
   } catch (error) {
     console.error("Delete user error:", error);
     showToast(error.message || "User delete failed.");
