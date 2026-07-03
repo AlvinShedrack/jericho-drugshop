@@ -1,7 +1,11 @@
 const SUPABASE_URL = "https://rorqfxjnupdnqzcozeut.supabase.co";
 const SUPABASE_KEY = "sb_publishable_ZCCvcvPKoSDuY4JpRgwghw_Wt35MjBx";
 
-const cloudClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+if (!window.supabase) {
+  throw new Error("Supabase library is not loaded. Check your script order.");
+}
+
+window.cloudClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const SYNC_STORES = [
   "users",
@@ -46,7 +50,13 @@ function setSyncStatus(message) {
   }
 
   if (typeof showToast === "function") {
-    showToast(message);
+    try {
+      showToast(message);
+    } catch (error) {
+      console.log("Toast skipped:", message);
+    }
+  } else {
+    console.log("Sync:", message);
   }
 }
 
@@ -95,7 +105,7 @@ async function markCloudRecordDeleted(storeName, id) {
     deleted: true
   };
 
-  const { error } = await cloudClient
+  const { error } = await window.cloudClient
     .from("cloud_records")
     .upsert([deletedRow], {
       onConflict: "store_name,local_id"
@@ -121,7 +131,7 @@ async function deleteEverywhere(storeName, id) {
   return now;
 }
 async function pullCloudStoreToLocal(storeName) {
-  const { data, error } = await cloudClient
+  const { data, error } = await window.cloudClient
     .from("cloud_records")
     .select("*")
     .eq("store_name", storeName)
@@ -181,7 +191,7 @@ async function pushLocalStoreToCloud(storeName) {
     return 0;
   }
 
-  const { error } = await cloudClient
+  const { error } = await window.cloudClient
     .from("cloud_records")
     .upsert(cloudRows, {
       onConflict: "store_name,local_id"
@@ -292,11 +302,3 @@ async function syncNow() {
   }
 }
 
-document.addEventListener("click", event => {
-  const button = event.target.closest(".sync-now-btn");
-
-  if (!button) return;
-
-  event.preventDefault();
-  syncNow();
-});

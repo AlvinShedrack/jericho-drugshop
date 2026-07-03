@@ -174,10 +174,19 @@ function simpleHash(text) {
 }
 
 function showToast(message) {
-  const toast = $("toast");
+  const toast = document.getElementById("toast");
+
+  if (!toast) {
+    console.log("Toast:", message);
+    return;
+  }
+
   toast.textContent = message;
   toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 2600);
+
+  setTimeout(() => {
+    if (toast) toast.classList.remove("show");
+  }, 2600);
 }
 
 function requireRole(roles) {
