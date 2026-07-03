@@ -199,10 +199,12 @@
               </div>
             </div>
             <div class="sale-add-row">
-              <select id="saleMedicineSelect"></select>
-              <input id="saleQty" type="number" min="1" placeholder="Quantity" />
-              <input id="saleDiscount" type="number" min="0" placeholder="Discount" />
-              <button id="addToCartBtn" class="secondary-btn">Add to Cart</button>
+              <select id="purchaseMedicineSelect"></select>
+              <input id="purchaseBatchNo" type="text" placeholder="Batch number" />
+              <input id="purchaseExpiryDate" type="text" placeholder="Expiry DD-MM-YYYY" />
+              <input id="purchaseQty" type="number" min="1" placeholder="Quantity" />
+              <input id="purchaseCost" type="number" min="0" placeholder="Unit cost" />
+              <button id="addPurchaseLineBtn" class="secondary-btn">Add Line</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -263,7 +265,7 @@
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Medicine</th><th>Qty</th><th>Unit Cost</th><th>Total</th><th></th></tr>
+                  <tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th>Qty</th><th>Unit Cost</th><th>Total</th><th></th></tr>
                 </thead>
                 <tbody id="purchaseLinesTable"></tbody>
               </table>
@@ -543,14 +545,12 @@
         <div><label>Medicine Name</label><input id="medicineName" required /></div>
         <div><label>Generic Name</label><input id="genericName" /></div>
         <div><label>Category</label><input id="category" placeholder="Antibiotic, Painkiller..." /></div>
-        <div><label>Batch Number</label><input id="batchNo" required /></div>
         <div><label>Supplier</label><select id="medicineSupplier"></select></div>
         <div><label>Quantity</label><input id="quantity" type="number" min="0" required /></div>
         <div><label>Buying Price</label><input id="buyingPrice" type="number" min="0" required /></div>
         <div><label>Selling Price</label><input id="sellingPrice" type="number" min="0" required /></div>
         <div><label>Wholesale Price</label><input id="wholesalePrice" type="number" min="0" placeholder="Wholesale price" /></div>
         <div><label>Reorder Level</label><input id="reorderLevel" type="number" min="0" value="5" required /></div>
-        <div><label>Expiry Date</label><input id="expiryDate" type="text" placeholder="DD-MM-YYYY" required /></div>
         <div class="span-two"><label>Notes</label><input id="medicineNotes" /></div>
         <div class="form-actions span-three">
           <button type="button" class="ghost-btn" data-close="medicineModal">Cancel</button>
