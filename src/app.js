@@ -200,7 +200,17 @@ function supplierName(suppliers, id) {
   const supplier = suppliers.find(item => Number(item.id) === Number(id));
   return supplier ? supplier.name : "Not set";
 }
+async function deleteCloudRecord(storeName, id) {
+  const { error } = await cloudClient
+    .from("cloud_records")
+    .delete()
+    .eq("store_name", storeName)
+    .eq("local_id", String(id));
 
+  if (error) {
+    throw error;
+  }
+}
 async function seedInitialData() {
   const users = await getAll(STORE.users);
   if (!users.length) {
@@ -585,21 +595,21 @@ async function deleteMedicine(id) {
   if (!confirm(`Delete ${med.name}?`)) return;
 
   try {
-    if (navigator.onLine && typeof markCloudRecordDeleted === "function") {
-      await markCloudRecordDeleted(STORE.medicines, id);
+    if (navigator.onLine && typeof deleteCloudRecord === "function") {
+      await deleteCloudRecord(STORE.medicines, id);
     }
 
-    await deleteEverywhere(STORE.medicines, id);
+    await deleteRecord(STORE.medicines, id);
     await writeAudit("medicine_deleted", { id, name: med.name });
 
     showToast("Medicine deleted.");
     await refreshAll();
 
-    if (typeof queueAutoSync === "function") {
-      queueAutoSync();
-    }
+    // IMPORTANT:
+    // Do NOT call queueAutoSync() after deleting.
+    // It can download the old cloud copy again.
   } catch (error) {
-    console.error("Delete medicine sync error:", error);
+    console.error("Delete medicine error:", error);
     showToast(error.message || "Medicine delete failed.");
   }
 }
@@ -709,21 +719,19 @@ async function deleteSupplier(id) {
   if (!confirm(`Delete supplier ${supplier.name}?`)) return;
 
   try {
-    if (navigator.onLine && typeof markCloudRecordDeleted === "function") {
-      await markCloudRecordDeleted(STORE.suppliers, id);
+    if (navigator.onLine && typeof deleteCloudRecord === "function") {
+      await deleteCloudRecord(STORE.suppliers, id);
     }
 
-    await deleteEverywhere(STORE.medicines, id);
+    await deleteRecord(STORE.suppliers, id);
     await writeAudit("supplier_deleted", { id, name: supplier.name });
 
     showToast("Supplier deleted.");
     await refreshAll();
 
-    if (typeof queueAutoSync === "function") {
-      queueAutoSync();
-    }
+    // Do NOT call queueAutoSync() here.
   } catch (error) {
-    console.error("Delete supplier sync error:", error);
+    console.error("Delete supplier error:", error);
     showToast(error.message || "Supplier delete failed.");
   }
 }
@@ -1266,21 +1274,19 @@ async function deleteUser(id) {
   if (!confirm(`Delete user ${user.name}?`)) return;
 
   try {
-    if (navigator.onLine && typeof markCloudRecordDeleted === "function") {
-      await markCloudRecordDeleted(STORE.users, id);
+    if (navigator.onLine && typeof deleteCloudRecord === "function") {
+      await deleteCloudRecord(STORE.users, id);
     }
 
-    await deleteEverywhere(STORE.users, id);
+    await deleteRecord(STORE.users, id);
     await writeAudit("user_deleted", { id, email: user.email });
 
     showToast("User deleted.");
     await refreshAll();
 
-    if (typeof queueAutoSync === "function") {
-      queueAutoSync();
-    }
+    // Do NOT call queueAutoSync() here.
   } catch (error) {
-    console.error("Delete user sync error:", error);
+    console.error("Delete user error:", error);
     showToast(error.message || "User delete failed.");
   }
 }
