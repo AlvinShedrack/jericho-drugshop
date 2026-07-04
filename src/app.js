@@ -20,9 +20,9 @@ const BRAND = {
   tagline: "caring passionately for your health and drug needs",
   receiptTagline: "Thank you for choosing Jericho First Aid Drug Shop.",
   logo: "./assets/budadiri-logo.png",
-  address: "Located at: Wagagai Hotel, Budadiri Town Council",
-  phone: "0704-180 237 / 0786-403 301",
-  email: ""
+  address: "Located at UTC, Namagumba Budadiri highway",
+  phone: "0774 658 920 / 0753 635 469 / 0756 303 274",
+  email: "annapatiencenuduwa@gmail.com"
 };
 const pageMeta = {
   dashboard: ["Dashboard", "Business overview and alerts"],
@@ -452,6 +452,7 @@ async function renderInventory() {
   const suppliers = await getAll(STORE.suppliers);
   const medicineSearch = $("medicineSearch");
   const medicineStatusFilter = $("medicineStatusFilter");
+  const canManagePricing = requireRole(["Administrator", "Director"]);
   const search = (medicineSearch?.value || "").toLowerCase().trim();
   const filter = medicineStatusFilter?.value || "all";
 
@@ -486,7 +487,7 @@ async function renderInventory() {
         <td><span class="badge ${stockBadge}">${Number(med.quantity || 0)}</span></td>
         <td>${formatMoney(med.buyingPrice)}</td>
         <td>${formatMoney(med.sellingPrice)}</td>
-        <td>${formatMoney(med.wholesalePrice)}</td>
+        ${canManagePricing ? `<td>${formatMoney(med.wholesalePrice)}</td>` : ""}
         <td><span class="badge ${expiryBadge}">${escapeHtml(formatDateDisplay(med.expiryDate))}</span></td>
         <td>
           ${canEdit ? `<button class="table-btn" data-action="edit-medicine" data-id="${med.id}">Edit</button>` : ""}
@@ -506,10 +507,16 @@ async function populateSupplierOptions() {
 
 async function populateMedicineOptions() {
   const medicines = await getAll(STORE.medicines);
+  const canManagePricing = requireRole(["Administrator", "Director"]);
   const saleOptions = medicines
     .filter(med => Number(med.quantity) > 0 && daysUntil(med.expiryDate) >= 0)
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map(med => `<option value="${med.id}">${escapeHtml(med.name)} | Qty ${med.quantity} | ${formatMoney(med.sellingPrice)}${med.wholesalePrice ? ` | Wholesale ${formatMoney(med.wholesalePrice)}` : ""}</option>`).join("");
+    .map(med => {
+      const priceLabel = canManagePricing && med.wholesalePrice
+        ? ` | Wholesale ${formatMoney(med.wholesalePrice)}`
+        : "";
+      return `<option value="${med.id}">${escapeHtml(med.name)} | Qty ${med.quantity} | ${formatMoney(med.sellingPrice)}${priceLabel}</option>`;
+    }).join("");
 
   const purchaseOptions = medicines
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -537,7 +544,7 @@ async function openMedicineForm(id = null) {
     $("quantity").value = med.quantity || 0;
     $("buyingPrice").value = med.buyingPrice || 0;
     $("sellingPrice").value = med.sellingPrice || 0;
-    $("wholesalePrice").value = "";
+    $("wholesalePrice").value = med.wholesalePrice || 0;
     $("reorderLevel").value = med.reorderLevel || 5;
     $("medicineNotes").value = med.notes || "";
   } else {
@@ -559,7 +566,7 @@ async function saveMedicine(event) {
   event.preventDefault();
 
   if (!requireRole(["Administrator", "Director"])) {
-    showToast("Only Admin or Pharmacist can save medicines.");
+    showToast("Only Admin or Director can save medicines.");
     return;
   }
 
@@ -1020,10 +1027,11 @@ function renderPurchaseLines() {
       <td>${escapeHtml(formatDateDisplay(item.expiryDate))}</td>
       <td>${item.qty}</td>
       <td>${formatMoney(item.unitCost)}</td>
+      <td>${formatMoney(item.retailPrice || 0)}</td>
       <td>${formatMoney(item.qty * item.unitCost)}</td>
       <td><button class="table-btn danger" data-action="remove-purchase-line" data-index="${index}">Remove</button></td>
     </tr>
-  `).join("") : `<tr><td colspan="7">No purchase lines.</td></tr>`;
+  `).join("") : `<tr><td colspan="8">No purchase lines.</td></tr>`;
 
   const total = purchaseLines.reduce((sum, item) => sum + (item.qty * item.unitCost), 0);
   $("purchaseTotal").textContent = formatMoney(total);
@@ -1039,9 +1047,10 @@ async function addPurchaseLine() {
   const expiryDate = normalizeDateInput($("purchaseExpiryDate").value);
   const qty = Number($("purchaseQty").value || 0);
   const unitCost = Number($("purchaseCost").value || 0);
+  const retailPrice = Number($("purchaseRetailPrice").value || 0);
 
-  if (!medicineId || !batchNo || !expiryDate || qty <= 0 || unitCost < 0) {
-    return showToast("Select medicine, batch number, expiry date, quantity, and unit cost.");
+  if (!medicineId || !batchNo || !expiryDate || qty <= 0 || unitCost < 0 || retailPrice < 0) {
+    return showToast("Select medicine, batch number, expiry date, quantity, buying price, and retail price.");
   }
 
   const med = await getById(STORE.medicines, medicineId);
@@ -1053,13 +1062,15 @@ async function addPurchaseLine() {
     batchNo,
     expiryDate,
     qty,
-    unitCost
+    unitCost,
+    retailPrice
   });
 
   $("purchaseBatchNo").value = "";
   $("purchaseExpiryDate").value = "";
   $("purchaseQty").value = "";
   $("purchaseCost").value = "";
+  $("purchaseRetailPrice").value = "";
 
   renderPurchaseLines();
 }
@@ -1079,8 +1090,8 @@ async function completePurchase() {
 
     med.quantity = Number(med.quantity || 0) + Number(line.qty);
     med.buyingPrice = Number(line.unitCost || med.buyingPrice || 0);
+    med.sellingPrice = Number(line.retailPrice || med.sellingPrice || 0);
 
-    // Batch and expiry now come from purchases
     med.batchNo = line.batchNo;
     med.expiryDate = line.expiryDate;
 

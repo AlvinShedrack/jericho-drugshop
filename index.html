@@ -158,7 +158,7 @@
             <table>
               <thead>
                 <tr>
-                  <th>Medicine</th><th>Batch</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Buy</th><th>Sell</th><th>Wholesale</th><th>Expiry</th><th>Actions</th>
+                  <th>Medicine</th><th>Batch</th><th>Category</th><th>Supplier</th><th>Qty</th><th>Buy</th><th>Retail</th><th>Expiry</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody id="medicineTable"></tbody>
@@ -256,14 +256,17 @@
             </div>
             <div class="sale-add-row">
               <select id="purchaseMedicineSelect"></select>
+              <input id="purchaseBatchNo" type="text" placeholder="Batch number" />
+              <input id="purchaseExpiryDate" type="text" placeholder="Expiry DD-MM-YYYY" />
               <input id="purchaseQty" type="number" min="1" placeholder="Quantity" />
-              <input id="purchaseCost" type="number" min="0" placeholder="Unit cost" />
+              <input id="purchaseCost" type="number" min="0" placeholder="Buying price" />
+              <input id="purchaseRetailPrice" type="number" min="0" placeholder="Retail price" />
               <button id="addPurchaseLineBtn" class="secondary-btn">Add Line</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th>Qty</th><th>Unit Cost</th><th>Total</th><th></th></tr>
+                  <tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th>Qty</th><th>Unit Cost</th><th>Retail Price</th><th></th>Total</th><th></th></tr>
                 </thead>
                 <tbody id="purchaseLinesTable"></tbody>
               </table>
@@ -546,8 +549,8 @@
         <div><label>Supplier</label><select id="medicineSupplier"></select></div>
         <div><label>Quantity</label><input id="quantity" type="number" min="0" required /></div>
         <div><label>Buying Price</label><input id="buyingPrice" type="number" min="0" required /></div>
-        <div><label>Selling Price</label><input id="sellingPrice" type="number" min="0" required /></div>
-        <div><label>Wholesale Price</label><input id="wholesalePrice" type="number" min="0" placeholder="Wholesale price" /></div>
+        <div><label>Retail Price</label><input id="sellingPrice" type="number" min="0" required /></div>
+        <div class="admin-only"><label>Wholesale Price</label><input id="wholesalePrice" type="number" min="0" placeholder="Wholesale price" /></div>
         <div><label>Reorder Level</label><input id="reorderLevel" type="number" min="0" value="5" required /></div>
         <div class="span-two"><label>Notes</label><input id="medicineNotes" /></div>
         <div class="form-actions span-three">
