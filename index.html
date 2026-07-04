@@ -199,12 +199,10 @@
               </div>
             </div>
             <div class="sale-add-row">
-              <select id="purchaseMedicineSelect"></select>
-              <input id="purchaseBatchNo" type="text" placeholder="Batch number" />
-              <input id="purchaseExpiryDate" type="text" placeholder="Expiry DD-MM-YYYY" />
-              <input id="purchaseQty" type="number" min="1" placeholder="Quantity" />
-              <input id="purchaseCost" type="number" min="0" placeholder="Unit cost" />
-              <button id="addPurchaseLineBtn" class="secondary-btn">Add Line</button>
+              <select id="saleMedicineSelect"></select>
+              <input id="saleQty" type="number" min="1" placeholder="Quantity" />
+              <input id="saleDiscount" type="number" min="0" placeholder="Discount" />
+              <button id="addToCartBtn" class="secondary-btn">Add To Cart</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -625,7 +623,7 @@
     Sync
   </button> 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  
+
   <script src="./src/db.js"></script>
   <script src="./src/sync.js"></script>
   <script src="./src/app.js"></script>

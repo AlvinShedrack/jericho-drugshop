@@ -450,8 +450,10 @@ async function renderDashboard() {
 async function renderInventory() {
   const medicines = await getAll(STORE.medicines);
   const suppliers = await getAll(STORE.suppliers);
-  const search = $("medicineSearch").value.toLowerCase().trim();
-  const filter = $("medicineStatusFilter").value;
+  const medicineSearch = $("medicineSearch");
+  const medicineStatusFilter = $("medicineStatusFilter");
+  const search = (medicineSearch?.value || "").toLowerCase().trim();
+  const filter = medicineStatusFilter?.value || "all";
 
   let filtered = medicines.filter(med => {
     const supplier = supplierName(suppliers, med.supplierId).toLowerCase();
@@ -498,8 +500,8 @@ async function renderInventory() {
 async function populateSupplierOptions() {
   const suppliers = await getAll(STORE.suppliers);
   const options = suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
-  $("medicineSupplier").innerHTML = `<option value="">Not set</option>${options}`;
-  $("purchaseSupplierSelect").innerHTML = suppliers.length ? options : `<option value="">Add supplier first</option>`;
+  if ($("medicineSupplier")) $("medicineSupplier").innerHTML = `<option value="">Not set</option>${options}`;
+  if ($("purchaseSupplierSelect")) $("purchaseSupplierSelect").innerHTML = suppliers.length ? options : `<option value="">Add supplier first</option>`;
 }
 
 async function populateMedicineOptions() {
@@ -513,8 +515,8 @@ async function populateMedicineOptions() {
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(med => `<option value="${med.id}">${escapeHtml(med.name)} | Batch ${escapeHtml(med.batchNo)}</option>`).join("");
 
-  $("saleMedicineSelect").innerHTML = saleOptions || `<option value="">No sellable medicine available</option>`;
-  $("purchaseMedicineSelect").innerHTML = purchaseOptions || `<option value="">Add medicine first</option>`;
+  if ($("saleMedicineSelect")) $("saleMedicineSelect").innerHTML = saleOptions || `<option value="">No sellable medicine available</option>`;
+  if ($("purchaseMedicineSelect")) $("purchaseMedicineSelect").innerHTML = purchaseOptions || `<option value="">Add medicine first</option>`;
 }
 
 async function openMedicineForm(id = null) {
@@ -753,9 +755,18 @@ async function deleteSupplier(id) {
 }
 
 async function addToCart() {
-  const medicineId = Number($("saleMedicineSelect").value);
-  const qty = Number($("saleQty").value || 0);
-  const discount = Number($("saleDiscount").value || 0);
+  const saleMedicineSelect = $("saleMedicineSelect");
+  const saleQtyInput = $("saleQty");
+  const saleDiscountInput = $("saleDiscount");
+
+  if (!saleMedicineSelect || !saleQtyInput || !saleDiscountInput) {
+    showToast("Sales form is not ready yet.");
+    return;
+  }
+
+  const medicineId = Number(saleMedicineSelect.value);
+  const qty = Number(saleQtyInput.value || 0);
+  const discount = Number(saleDiscountInput.value || 0);
 
   if (!medicineId || qty <= 0) return showToast("Select medicine and quantity.");
 
@@ -783,8 +794,8 @@ async function addToCart() {
     saleType
   });
 
-  $("saleQty").value = "";
-  $("saleDiscount").value = "";
+  if (saleQtyInput) saleQtyInput.value = "";
+  if (saleDiscountInput) saleDiscountInput.value = "";
   renderCart();
 }
 
@@ -2651,17 +2662,17 @@ function bindEvents() {
     button.addEventListener("click", () => closeModal(button.dataset.close));
   });
 
-  $("addMedicineBtn").addEventListener("click", () => openMedicineForm());
-  $("medicineForm").addEventListener("submit", saveMedicine);
-  $("medicineSearch").addEventListener("input", renderInventory);
-  $("medicineStatusFilter").addEventListener("change", renderInventory);
+  $("addMedicineBtn")?.addEventListener("click", () => openMedicineForm());
+  $("medicineForm")?.addEventListener("submit", saveMedicine);
+  $("medicineSearch")?.addEventListener("input", renderInventory);
+  $("medicineStatusFilter")?.addEventListener("change", renderInventory);
 
-  $("addSupplierBtn").addEventListener("click", () => openSupplierForm());
-  $("supplierForm").addEventListener("submit", saveSupplier);
+  $("addSupplierBtn")?.addEventListener("click", () => openSupplierForm());
+  $("supplierForm")?.addEventListener("submit", saveSupplier);
 
-  $("addToCartBtn").addEventListener("click", addToCart);
-  $("completeSaleBtn").addEventListener("click", completeSale);
-  $("clearCartBtn").addEventListener("click", () => { cart = []; renderCart(); });
+  $("addToCartBtn")?.addEventListener("click", addToCart);
+  $("completeSaleBtn")?.addEventListener("click", completeSale);
+  $("clearCartBtn")?.addEventListener("click", () => { cart = []; renderCart(); });
   $("printReceiptBtn").addEventListener("click", async () => {
     await markReceiptAsPrinted();
     printElement("receiptContent", "Sales Receipt");
@@ -2672,14 +2683,14 @@ function bindEvents() {
   });
   $("printPageBtn")?.addEventListener("click", printOrExportPagePdf);
 
-  $("expenseForm").addEventListener("submit", savePurchaseExpense);
-  $("addPurchaseLineBtn").addEventListener("click", addPurchaseLine);
-  $("completePurchaseBtn").addEventListener("click", completePurchase);
+  $("expenseForm")?.addEventListener("submit", savePurchaseExpense);
+  $("addPurchaseLineBtn")?.addEventListener("click", addPurchaseLine);
+  $("completePurchaseBtn")?.addEventListener("click", completePurchase);
   $("clearPurchaseBtn").addEventListener("click", () => { purchaseLines = []; renderPurchaseLines(); });
 
-  $("refreshReportsBtn").addEventListener("click", renderReports);
-  $("reportDate").addEventListener("change", renderReports);
-  $("exportSalesCsvBtn").addEventListener("click", exportSalesCsv);
+  $("refreshReportsBtn")?.addEventListener("click", renderReports);
+  $("reportDate")?.addEventListener("change", renderReports);
+  $("exportSalesCsvBtn")?.addEventListener("click", exportSalesCsv);
     const printReportBtn = $("printReportBtn");
     if (printReportBtn) {
       printReportBtn.addEventListener("click", () => {
@@ -2691,11 +2702,11 @@ function bindEvents() {
     exportPurchasesCsvBtn.addEventListener("click", exportPurchasesCsv);
   }
 
-  $("addUserBtn").addEventListener("click", () => openUserForm());
-  $("userForm").addEventListener("submit", saveUser);
+  $("addUserBtn")?.addEventListener("click", () => openUserForm());
+  $("userForm")?.addEventListener("submit", saveUser);
 
-  $("exportBackupBtn").addEventListener("click", exportBackup);
-  $("importBackupInput").addEventListener("change", event => importBackup(event.target.files[0]));
+  $("exportBackupBtn")?.addEventListener("click", exportBackup);
+  $("importBackupInput")?.addEventListener("change", event => importBackup(event.target.files[0]));
 
   document.querySelectorAll(".sync-now-btn").forEach(button => {
     button.addEventListener("click", () => {
