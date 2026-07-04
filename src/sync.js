@@ -92,6 +92,40 @@ function prepareRecordForCloud(storeName, record) {
   };
 }
 
+async function saveCloudRow(row) {
+  const { data: existingRows, error: selectError } = await window.cloudClient
+    .from("cloud_records")
+    .select("id")
+    .eq("store_name", row.store_name)
+    .eq("local_id", row.local_id)
+    .limit(1);
+
+  if (selectError) {
+    throw selectError;
+  }
+
+  if (existingRows && existingRows.length) {
+    const { error } = await window.cloudClient
+      .from("cloud_records")
+      .update(row)
+      .eq("id", existingRows[0].id);
+
+    if (error) {
+      throw error;
+    }
+
+    return;
+  }
+
+  const { error } = await window.cloudClient
+    .from("cloud_records")
+    .insert([row]);
+
+  if (error) {
+    throw error;
+  }
+}
+
 async function markCloudRecordDeleted(storeName, id) {
   const now = new Date().toISOString();
 
@@ -108,16 +142,9 @@ async function markCloudRecordDeleted(storeName, id) {
     deleted: true
   };
 
-  const { error } = await window.cloudClient
-    .from("cloud_records")
-    .upsert([deletedRow], {
-      onConflict: "store_name,local_id"
-    });
-
-  if (error) {
-    throw error;
-  }
+  await saveCloudRow(deletedRow);
 }
+
 async function deleteEverywhere(storeName, id) {
   const now = new Date().toISOString();
 
@@ -194,14 +221,8 @@ async function pushLocalStoreToCloud(storeName) {
     return 0;
   }
 
-  const { error } = await window.cloudClient
-    .from("cloud_records")
-    .upsert(cloudRows, {
-      onConflict: "store_name,local_id"
-    });
-
-  if (error) {
-    throw error;
+  for (const row of cloudRows) {
+    await saveCloudRow(row);
   }
 
   return cloudRows.length;

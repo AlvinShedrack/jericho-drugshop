@@ -1,4 +1,4 @@
-const CACHE_NAME = "my-rx-cache-v8";
+const CACHE_NAME = "my-rx-cache-v9";
 
 const FILES_TO_CACHE = [
   "./",
@@ -7,6 +7,7 @@ const FILES_TO_CACHE = [
   "./sw.js",
   "./src/styles.css",
   "./src/db.js",
+  "./src/sync.js",
   "./src/app.js",
   "./assets/icon-192.png",
   "./assets/icon-512.png",
