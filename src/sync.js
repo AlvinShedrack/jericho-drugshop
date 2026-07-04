@@ -93,33 +93,12 @@ function prepareRecordForCloud(storeName, record) {
 }
 
 async function saveCloudRow(row) {
-  const { data: existingRows, error: selectError } = await window.cloudClient
-    .from("cloud_records")
-    .select("id")
-    .eq("store_name", row.store_name)
-    .eq("local_id", row.local_id)
-    .limit(1);
-
-  if (selectError) {
-    throw selectError;
-  }
-
-  if (existingRows && existingRows.length) {
-    const { error } = await window.cloudClient
-      .from("cloud_records")
-      .update(row)
-      .eq("id", existingRows[0].id);
-
-    if (error) {
-      throw error;
-    }
-
-    return;
-  }
-
   const { error } = await window.cloudClient
     .from("cloud_records")
-    .insert([row]);
+    .upsert([row], {
+      onConflict: "store_name,local_id",
+      defaultToNull: false
+    });
 
   if (error) {
     throw error;
