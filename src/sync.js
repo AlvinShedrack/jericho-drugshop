@@ -121,8 +121,17 @@ async function saveCloudRow(row) {
     const existingTime = getRecordTimestamp(existingRow, existingRow.updated_at);
     const newTime = getRecordTimestamp(row, row.updated_at);
 
-    if (existingTime >= newTime) {
+    if (existingTime > newTime) {
       return;
+    }
+
+    if (existingTime === newTime) {
+      if (existingRow.deleted === row.deleted) {
+        return;
+      }
+      if (existingRow.deleted && !row.deleted) {
+        return;
+      }
     }
   }
 
