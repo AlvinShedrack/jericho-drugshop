@@ -540,9 +540,6 @@ async function openMedicineForm(id = null) {
     $("medicineName").value = med.name || "";
     $("genericName").value = med.genericName || "";
     $("category").value = med.category || "";
-    $("medicineSupplier").value = med.supplierId || "";
-    $("quantity").value = med.quantity || 0;
-    $("buyingPrice").value = med.buyingPrice || 0;
     $("sellingPrice").value = med.sellingPrice || 0;
     $("wholesalePrice").value = med.wholesalePrice || 0;
     $("reorderLevel").value = med.reorderLevel || 5;
@@ -577,9 +574,6 @@ async function saveMedicine(event) {
     name: $("medicineName").value.trim(),
     genericName: $("genericName").value.trim(),
     category: $("category").value.trim(),
-    supplierId: $("medicineSupplier").value ? Number($("medicineSupplier").value) : null,
-    quantity: Number($("quantity").value || 0),
-    buyingPrice: Number($("buyingPrice").value || 0),
     sellingPrice: Number($("sellingPrice").value || 0),
     wholesalePrice: Number($("wholesalePrice").value || 0),
     reorderLevel: Number($("reorderLevel").value || 5),
