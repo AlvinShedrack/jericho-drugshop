@@ -362,14 +362,21 @@ async function syncNow() {
   }
 
   syncRunning = true;
-  updateSyncButtons("Uploading local changes first...", true);
-  setSyncStatus("Uploading local changes first...");
+  updateSyncButtons("Applying cloud deletions first...", true);
+  setSyncStatus("Applying cloud deletions first...");
 
   try {
-    // 1. Upload local changes first so edits do not get overwritten by old cloud data
+    // 1. Apply remote deletions before pushing local records
+    const pulledDeletions = await Promise.all(SYNC_STORES.map(storeName => pullCloudDeletionsFirst(storeName)));
+    const deletedCount = pulledDeletions.reduce((sum, value) => sum + value, 0);
+
+    updateSyncButtons("Uploading local changes...", true);
+    setSyncStatus("Uploading local changes...");
+
+    // 2. Upload local changes after remote tombstones are applied
     const pushed = await pushAllLocalData();
 
-    // 2. Then download final cloud data
+    // 3. Then download all cloud data to reconcile any remaining updates
     updateSyncButtons("Downloading latest cloud data...", true);
     setSyncStatus("Downloading latest cloud data...");
 

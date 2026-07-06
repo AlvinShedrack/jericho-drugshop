@@ -609,11 +609,7 @@ async function deleteMedicine(id) {
   if (!confirm(`Delete ${med.name}?`)) return;
 
   try {
-    if (navigator.onLine && typeof deleteCloudRecord === "function") {
-      await deleteCloudRecord(STORE.medicines, id);
-    }
-
-    await deleteRecord(STORE.medicines, id);
+    await deleteEverywhere(STORE.medicines, id);
     await writeAudit("medicine_deleted", { id, name: med.name });
 
     showToast("Medicine deleted.");
@@ -734,11 +730,7 @@ async function deleteSupplier(id) {
   if (!confirm(`Delete supplier ${supplier.name}?`)) return;
 
   try {
-    if (navigator.onLine && typeof deleteCloudRecord === "function") {
-      await deleteCloudRecord(STORE.suppliers, id);
-    }
-
-    await deleteRecord(STORE.suppliers, id);
+    await deleteEverywhere(STORE.suppliers, id);
     await writeAudit("supplier_deleted", { id, name: supplier.name });
 
     showToast("Supplier deleted.");
@@ -1304,11 +1296,7 @@ async function deleteUser(id) {
   if (!confirm(`Delete user ${user.name}?`)) return;
 
   try {
-    if (navigator.onLine && typeof deleteCloudRecord === "function") {
-      await deleteCloudRecord(STORE.users, id);
-    }
-
-    await deleteRecord(STORE.users, id);
+    await deleteEverywhere(STORE.users, id);
     await writeAudit("user_deleted", { id, email: user.email });
 
     showToast("User deleted.");
