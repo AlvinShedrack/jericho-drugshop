@@ -678,6 +678,7 @@ async function openSupplierForm(id = null) {
 async function renderDashboardMedicineSearch() {
   const medicines = await getAll(STORE.medicines);
   const query = ($("dashMedicineSearch")?.value || "").toLowerCase().trim();
+  const canManagePricing = requireRole(["Administrator", "Director"]);
 
   const filtered = medicines
     .filter(med => {
@@ -698,7 +699,7 @@ async function renderDashboardMedicineSearch() {
     <div class="price-search-item">
       <strong>${escapeHtml(med.name)}</strong>
       <div>Retail: ${formatMoney(med.sellingPrice)}</div>
-      <div>Wholesale: ${formatMoney(med.wholesalePrice)}</div>
+      ${canManagePricing ? `<div>Wholesale: ${formatMoney(med.wholesalePrice)}</div>` : ""}
       <div>Available Qty: ${Number(med.quantity || 0)}</div>
     </div>
   `).join("") : `<div class="muted">No medicine found.</div>`;

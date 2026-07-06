@@ -42,6 +42,14 @@ function getRecordTime(record, fallbackDate = null) {
   return Number.isNaN(time) ? 0 : time;
 }
 
+function getRecordTimestamp(recordOrRow, fallbackDate = null) {
+  const record = recordOrRow?.data || recordOrRow;
+  const value = record?.updatedAt || record?.createdAt || recordOrRow?.updated_at || fallbackDate || 0;
+  const time = new Date(value).getTime();
+
+  return Number.isNaN(time) ? 0 : time;
+}
+
 function setSyncStatus(message) {
   const syncStatusText = document.getElementById("syncStatusText");
 
@@ -153,11 +161,30 @@ async function pullCloudStoreToLocal(storeName) {
   let imported = 0;
 
   for (const row of data || []) {
+    const rowId = row?.local_id;
+
     if (row.deleted) {
-      await deleteRecord(storeName, row.local_id);
+      const localRecord = rowId !== undefined && rowId !== null && rowId !== ""
+        ? await getById(storeName, rowId)
+        : null;
+      const localTime = localRecord ? getRecordTime(localRecord) : 0;
+      const tombstoneTime = getRecordTimestamp(row, row.updated_at);
+
+      if (!localRecord) {
+        imported++;
+        continue;
+      }
+
+      if (localTime > tombstoneTime) {
+        await saveCloudRow(prepareRecordForCloud(storeName, localRecord));
+      } else {
+        await deleteRecord(storeName, rowId);
+      }
+
       imported++;
       continue;
     }
+
     if (!row.data) continue;
 
     const cloudRecord = {
@@ -178,10 +205,13 @@ async function pullCloudStoreToLocal(storeName) {
     }
 
     const localTime = getRecordTime(localRecord);
-    const cloudTime = getRecordTime(cloudRecord, row.updated_at);
+    const cloudTime = getRecordTimestamp(row, row.updated_at);
 
     if (cloudTime > localTime) {
       await putRecord(storeName, cloudRecord);
+      imported++;
+    } else if (localTime > cloudTime) {
+      await saveCloudRow(prepareRecordForCloud(storeName, localRecord));
       imported++;
     }
   }
