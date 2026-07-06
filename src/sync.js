@@ -449,6 +449,7 @@ function startAutoSync() {
 
   if (navigator.onLine) {
     setSyncButtonState(false, "Sync Now");
+    queueAutoSync();
   } else {
     setSyncButtonState(false, "Offline");
   }
