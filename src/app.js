@@ -481,14 +481,11 @@ async function renderInventory() {
     return `
       <tr>
         <td><strong>${escapeHtml(med.name)}</strong><br><span class="muted">${escapeHtml(med.genericName || "")}</span></td>
-        <td>${escapeHtml(med.batchNo)}</td>
         <td>${escapeHtml(med.category || "")}</td>
-        <td>${escapeHtml(supplierName(suppliers, med.supplierId))}</td>
-        <td><span class="badge ${stockBadge}">${Number(med.quantity || 0)}</span></td>
-        <td>${formatMoney(med.buyingPrice)}</td>
         <td>${formatMoney(med.sellingPrice)}</td>
         ${canManagePricing ? `<td>${formatMoney(med.wholesalePrice)}</td>` : ""}
-        <td><span class="badge ${expiryBadge}">${escapeHtml(formatDateDisplay(med.expiryDate))}</span></td>
+        <td>${Number(med.reorderLevel || 5)}</td>
+        <td>${escapeHtml(med.notes || "")}</td>
         <td>
           ${canEdit ? `<button class="table-btn" data-action="edit-medicine" data-id="${med.id}">Edit</button>` : ""}
           ${canEdit ? `<button class="table-btn danger" data-action="delete-medicine" data-id="${med.id}">Delete</button>` : ""}
