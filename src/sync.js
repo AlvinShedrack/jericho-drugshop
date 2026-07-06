@@ -1,7 +1,6 @@
 const JERICHO_SUPABASE_URL = "https://rorqfxjnupdnqzcozeut.supabase.co";
 const JERICHO_SUPABASE_PUBLIC_KEY = "sb_publishable_ZCCvcvPKoSDuY4JpRgwghw_Wt35MjBx";
 
-
 if (!window.supabase) {
   alert("Supabase library is not loaded. Check script order and internet connection.");
   throw new Error("Supabase library is not loaded.");
@@ -111,6 +110,40 @@ function getRecordTime(record) {
   return Number.isNaN(time) ? 0 : time;
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getRecordIdentityKey(storeName, record) {
+  if (!record) return null;
+
+  if (storeName === "users") {
+    const email = normalizeText(record.email);
+
+    if (email) {
+      return "users:email:" + email;
+    }
+  }
+
+  if (storeName === "suppliers") {
+    const supplierName = normalizeText(
+      record.supplierName ||
+      record.companyName ||
+      record.name
+    );
+
+    if (supplierName) {
+      return "suppliers:name:" + supplierName;
+    }
+  }
+
+  if (record.id !== undefined && record.id !== null) {
+    return storeName + ":id:" + String(record.id);
+  }
+
+  return null;
+}
+
 function normalizeRecordForCloud(record) {
   const now = new Date().toISOString();
 
@@ -147,13 +180,14 @@ function recordFromCloud(row) {
   };
 }
 
-function mergeRecords(localRecords, cloudRecords) {
+function mergeRecords(storeName, localRecords, cloudRecords) {
   const merged = new Map();
 
   [...localRecords, ...cloudRecords].forEach(record => {
-    if (record.id === undefined || record.id === null) return;
+    const key = getRecordIdentityKey(storeName, record);
 
-    const key = String(record.id);
+    if (!key) return;
+
     const existing = merged.get(key);
 
     if (!existing) {
@@ -227,7 +261,7 @@ async function pullRecordsFromSupabase(options = {}) {
 
       downloadedCount += cloudRecords.length;
 
-      const mergedRecords = mergeRecords(localRecords, cloudRecords);
+      const mergedRecords = mergeRecords(storeName, localRecords, cloudRecords);
       await replaceStoreRecords(storeName, mergedRecords);
     }
 
@@ -293,22 +327,34 @@ async function syncRecordsToSupabase(options = {}) {
       return 0;
     }
 
-    const { data, error } = await getJerichoCloud()
-      .from(JERICHO_SYNC_TABLE)
-      .upsert(payload, {
-        onConflict: "store_name,local_id"
-      })
-      .select();
+    let uploadedCount = 0;
 
-    if (error) {
-      throw error;
+    for (const record of payload) {
+      const { data, error } = await getJerichoCloud().rpc(
+        "sync_jericho_record_replace",
+        {
+          p_store_name: record.store_name,
+          p_local_id: record.local_id,
+          p_device_id: record.device_id,
+          p_data: record.data,
+          p_updated_at: record.updated_at || new Date().toISOString()
+        }
+      );
+
+      if (error) {
+        console.error("UPLOAD FAILED RECORD:", record);
+        throw error;
+      }
+
+      uploadedCount += 1;
+      console.log("UPLOAD SUCCESS RECORD:", data);
     }
 
-    console.log("UPLOAD SUCCESS:", data);
+    console.log("UPLOAD SUCCESS COUNT:", uploadedCount);
 
     localStorage.setItem(JERICHO_LAST_SYNC_KEY, new Date().toISOString());
 
-    return payload.length;
+    return uploadedCount;
   } catch (error) {
     setSyncButtonState(false, "Upload failed");
 
@@ -408,17 +454,64 @@ async function deleteEverywhere(storeName, id) {
     throw new Error("You are offline. Connect to internet before deleting this record.");
   }
 
-  const { error } = await getJerichoCloud()
-    .from(JERICHO_SYNC_TABLE)
-    .delete()
-    .eq("store_name", storeName)
-    .eq("local_id", String(id));
+  await dbReady;
+
+  const localRecords = await getAll(storeName);
+  const recordToDelete = localRecords.find(record => String(record.id) === String(id));
+
+  const { error } = await getJerichoCloud().rpc(
+    "delete_jericho_record_everywhere",
+    {
+      p_store_name: storeName,
+      p_local_id: String(id),
+      p_data: recordToDelete || {}
+    }
+  );
 
   if (error) {
     throw error;
   }
 
+  // Delete exact local record
   await deleteRecord(storeName, id);
+
+  // Also remove local duplicates by email or supplier name
+  const remainingRecords = await getAll(storeName);
+
+  for (const record of remainingRecords) {
+    if (storeName === "users") {
+      const deletedEmail = String(recordToDelete?.email || "").trim().toLowerCase();
+      const recordEmail = String(record?.email || "").trim().toLowerCase();
+
+      if (deletedEmail && recordEmail === deletedEmail) {
+        await deleteRecord(storeName, record.id);
+      }
+    }
+
+    if (storeName === "suppliers") {
+      const deletedName = String(
+        recordToDelete?.supplierName ||
+        recordToDelete?.companyName ||
+        recordToDelete?.name ||
+        ""
+      ).trim().toLowerCase();
+
+      const recordName = String(
+        record?.supplierName ||
+        record?.companyName ||
+        record?.name ||
+        ""
+      ).trim().toLowerCase();
+
+      if (deletedName && recordName === deletedName) {
+        await deleteRecord(storeName, record.id);
+      }
+    }
+  }
+
+  if (typeof refreshAll === "function") {
+    await refreshAll();
+  }
 }
 
 function bindSyncButtons() {

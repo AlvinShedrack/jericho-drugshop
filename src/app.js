@@ -217,7 +217,7 @@ async function deleteCloudRecord(storeName, id) {
   }
 
   const { error } = await window.cloudClient
-    .from("cloud_records")
+    .from("jericho_records")
     .delete()
     .eq("store_name", storeName)
     .eq("local_id", String(id));
@@ -944,12 +944,7 @@ async function completeSale() {
   if (!cart.length) return showToast("Cart is empty.");
 
   const medicines = await getAll(STORE.medicines);
-  for (const item of cart) {
-    const med = medicines.find(m => Number(m.id) === Number(item.medicineId));
-    if (!med || Number(med.quantity) < Number(item.qty)) {
-      return showToast(`Insufficient stock for ${item.name}.`);
-    }
-  }
+
 
   const subtotal = cart.reduce((sum, item) => sum + (item.qty * item.sellingPrice), 0);
   const discount = cart.reduce((sum, item) => sum + item.discount, 0);
