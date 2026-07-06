@@ -157,6 +157,32 @@ async function markCloudRecordDeleted(storeName, id) {
   await saveCloudRow(deletedRow);
 }
 
+async function getRemoteDeletionTimestamps(storeName) {
+  const { data, error } = await window.cloudClient
+    .from("cloud_records")
+    .select("local_id, updated_at")
+    .eq("store_name", storeName)
+    .eq("deleted", true);
+
+  if (error) {
+    throw error;
+  }
+
+  const tombstoneTimes = {};
+  for (const row of data || []) {
+    const rowId = row?.local_id;
+    if (rowId === undefined || rowId === null || rowId === "") {
+      continue;
+    }
+
+    const timestamp = getRecordTimestamp(row, row.updated_at);
+    const key = String(rowId);
+    tombstoneTimes[key] = Math.max(tombstoneTimes[key] || 0, timestamp);
+  }
+
+  return tombstoneTimes;
+}
+
 async function deleteEverywhere(storeName, id) {
   const now = new Date().toISOString();
 
@@ -173,6 +199,8 @@ async function deleteEverywhere(storeName, id) {
   return now;
 }
 async function pullCloudStoreToLocal(storeName) {
+  const deletionTimestamps = await getRemoteDeletionTimestamps(storeName);
+
   const { data, error } = await window.cloudClient
     .from("cloud_records")
     .select("*")
@@ -224,6 +252,13 @@ async function pullCloudStoreToLocal(storeName) {
     const localRecord = await getById(storeName, cloudRecord.id);
 
     if (!localRecord) {
+      const tombstoneTime = deletionTimestamps[String(cloudRecord.id)];
+      const cloudTime = getRecordTimestamp(row, row.updated_at);
+
+      if (tombstoneTime && tombstoneTime >= cloudTime) {
+        continue;
+      }
+
       await putRecord(storeName, cloudRecord);
       imported++;
       continue;
@@ -233,6 +268,11 @@ async function pullCloudStoreToLocal(storeName) {
     const cloudTime = getRecordTimestamp(row, row.updated_at);
 
     if (cloudTime > localTime) {
+      const tombstoneTime = deletionTimestamps[String(cloudRecord.id)];
+      if (tombstoneTime && tombstoneTime >= cloudTime) {
+        continue;
+      }
+
       await putRecord(storeName, cloudRecord);
       imported++;
     } else if (localTime > cloudTime) {
