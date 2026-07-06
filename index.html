@@ -220,7 +220,32 @@
             <div class="checkout-line"><span>Total Discount</span><strong id="cartDiscount">USh 0</strong></div>
             <div class="checkout-line total"><span>Total</span><strong id="cartTotal">USh 0</strong></div>
             <button id="completeSaleBtn" class="primary-btn full">Complete Sale</button>
+            <button id="cancelEditSaleBtn" class="secondary-btn full">Cancel Edit</button>
             <button id="clearCartBtn" class="ghost-btn full">Clear Cart</button>
+            <div id="saleEditNote" class="muted" style="margin-top: 0.75rem; display: block;"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header split">
+            <div>
+              <h2>Sales History</h2>
+              <p>View and edit completed sales records.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Receipt</th>
+                  <th>Customer</th>
+                  <th>Total</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="salesHistoryTable"></tbody>
+            </table>
           </div>
         </div>
       </section>

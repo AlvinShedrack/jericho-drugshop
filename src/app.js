@@ -13,6 +13,7 @@ let currentUser = null;
 let cart = [];
 let purchaseLines = [];
 let currentReceiptSale = null;
+let editingSaleId = null;
 let deferredInstallPrompt = null;
 
 const BRAND = {
@@ -227,43 +228,57 @@ async function deleteCloudRecord(storeName, id) {
 }
 async function seedInitialData() {
   const users = await getAll(STORE.users);
-  if (!users.length) {
-    await addRecord(STORE.users, {
+  const existingEmails = new Set(users.map(user => String(user.email || "").toLowerCase()));
+  const defaultUsers = [
+    {
+      id: 1,
       name: "System Administrator",
       email: "admin@jericho.com",
       passwordHash: simpleHash("admin123"),
       role: "Administrator",
       isActive: true,
-      createdAt: new Date().toISOString()
-    });
-
-    await addRecord(STORE.users, {
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 2,
       name: "Main Dispenser",
       email: "dispenser@jericho.com",
       passwordHash: simpleHash("disp123"),
       role: "Dispenser",
       isActive: true,
-      createdAt: new Date().toISOString()
-    });
-
-    await addRecord(STORE.users, {
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 3,
       name: "Director",
       email: "director@jericho.com",
       passwordHash: simpleHash("director123"),
       role: "Director",
       isActive: true,
-      createdAt: new Date().toISOString()
-    });
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ];
+
+  for (const user of defaultUsers) {
+    const emailKey = String(user.email || "").toLowerCase();
+    if (existingEmails.has(emailKey)) continue;
+    await addRecord(STORE.users, user);
+    existingEmails.add(emailKey);
   }
 
   const suppliers = await getAll(STORE.suppliers);
   if (!suppliers.length) {
     await addRecord(STORE.suppliers, {
+      id: 1,
       name: "Default Supplier",
       phone: "",
       email: "",
       address: "",
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
   }
 }
@@ -815,6 +830,116 @@ function renderCart() {
   $("cartTotal").textContent = formatMoney(total);
 }
 
+function resetSaleEditState() {
+  editingSaleId = null;
+  const completeButton = $("completeSaleBtn");
+  if (completeButton) {
+    completeButton.textContent = "Complete Sale";
+  }
+  const note = $("saleEditNote");
+  if (note) {
+    note.textContent = "";
+  }
+}
+
+async function editSale(id) {
+  const sale = await getById(STORE.sales, id);
+  if (!sale) {
+    return showToast("Sale not found.");
+  }
+
+  editingSaleId = id;
+  cart = Array.isArray(sale.lines) ? sale.lines.map(line => ({ ...line })) : [];
+  $("saleCustomer").value = sale.customerName || "";
+  $("salePaymentMethod").value = sale.paymentMethod || "Cash";
+  $("saleType").value = sale.saleType || "retail";
+
+  const completeButton = $("completeSaleBtn");
+  if (completeButton) {
+    completeButton.textContent = "Update Sale";
+  }
+
+  const note = $("saleEditNote");
+  if (note) {
+    note.textContent = `Editing sale ${sale.receiptNo}`;
+  }
+
+  renderCart();
+}
+
+async function renderSalesHistory() {
+  const sales = await getAll(STORE.sales);
+  const canDelete = requireRole(["Administrator", "Director"]);
+
+  const rows = sales
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map(sale => `
+      <tr>
+        <td>${escapeHtml(sale.receiptNo)}</td>
+        <td>${escapeHtml(sale.customerName || "Walk-in customer")}</td>
+        <td>${formatMoney(sale.total)}</td>
+        <td>${formatDateDisplay(sale.createdAt)}</td>
+        <td>
+          <button class="table-btn" data-action="edit-sale" data-id="${sale.id}">Edit</button>
+          ${canDelete ? `<button class="table-btn danger" data-action="delete-sale" data-id="${sale.id}">Delete</button>` : ""}
+        </td>
+      </tr>
+    `).join("");
+
+  $("salesHistoryTable").innerHTML = rows || `<tr><td colspan="5">No sales recorded yet.</td></tr>`;
+}
+async function deleteSale(id) {
+  if (!requireRole(["Administrator", "Director"])) {
+    return showToast("Only Administrator or Director can delete sales.");
+  }
+
+  const sale = await getById(STORE.sales, id);
+  if (!sale) {
+    return showToast("Sale not found.");
+  }
+
+  if (!confirm(`Delete sale ${sale.receiptNo}? This will return the sold stock back to inventory.`)) {
+    return;
+  }
+
+  try {
+    if (Array.isArray(sale.lines)) {
+      for (const item of sale.lines) {
+        const med = await getById(STORE.medicines, item.medicineId);
+        if (!med) continue;
+
+        med.quantity = Number(med.quantity || 0) + Number(item.qty || 0);
+        med.updatedAt = new Date().toISOString();
+
+        await putRecord(STORE.medicines, med);
+      }
+    }
+
+    await deleteEverywhere(STORE.sales, id);
+
+    await writeAudit("sale_deleted", {
+      id,
+      receiptNo: sale.receiptNo,
+      total: sale.total
+    });
+
+    if (Number(editingSaleId) === Number(id)) {
+      cart = [];
+      resetSaleEditState();
+      renderCart();
+    }
+
+    showToast("Sale deleted and stock restored.");
+    await refreshAll();
+
+    if (typeof queueAutoSync === "function") {
+      queueAutoSync();
+    }
+  } catch (error) {
+    console.error("Delete sale error:", error);
+    showToast(error.message || "Sale delete failed.");
+  }
+}
 async function completeSale() {
   if (!cart.length) return showToast("Cart is empty.");
 
@@ -852,9 +977,38 @@ async function completeSale() {
   }
 
   const saleType = $("saleType")?.value || "retail";
+  let originalSale = null;
 
-  const sale = {
-    receiptNo: `JD-${Date.now()}`,
+  if (editingSaleId) {
+    originalSale = await getById(STORE.sales, editingSaleId);
+    if (!originalSale) {
+      showToast("Original sale not found.");
+      resetSaleEditState();
+      return;
+    }
+  }
+
+  const stockRecords = await getAll(STORE.medicines);
+
+  if (editingSaleId && originalSale?.lines) {
+    for (const item of originalSale.lines) {
+      const med = stockRecords.find(m => Number(m.id) === Number(item.medicineId));
+      if (!med) continue;
+      med.quantity = Number(med.quantity || 0) + Number(item.qty || 0);
+      med.updatedAt = new Date().toISOString();
+      await putRecord(STORE.medicines, med);
+    }
+  }
+
+  for (const item of cart) {
+    const med = await getById(STORE.medicines, item.medicineId);
+    if (!med || Number(med.quantity) < Number(item.qty)) {
+      return showToast(`Insufficient stock for ${item.name}.`);
+    }
+  }
+
+  const saleData = {
+    receiptNo: editingSaleId ? originalSale.receiptNo : `JD-${Date.now()}`,
     customerName: $("saleCustomer").value.trim() || "Walk-in customer",
     paymentMethod: $("salePaymentMethod").value,
     saleType,
@@ -867,18 +1021,34 @@ async function completeSale() {
     changeGiven,
     profit,
     lines: cart.map(item => ({ ...item })),
-    createdAt: new Date().toISOString()
+    createdAt: editingSaleId ? originalSale.createdAt : new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 
-  const saleId = await addRecord(STORE.sales, sale);
-  const savedSale = { ...sale, id: saleId };
-  await writeAudit("sale_completed", { receiptNo: sale.receiptNo, total, amountPaid, changeGiven });
+  for (const item of cart) {
+    const med = await getById(STORE.medicines, item.medicineId);
+    med.quantity = Number(med.quantity) - Number(item.qty);
+    med.updatedAt = new Date().toISOString();
+    await putRecord(STORE.medicines, med);
+  }
 
-  showReceipt(savedSale);
+  if (editingSaleId) {
+    saleData.id = Number(editingSaleId);
+    await putRecord(STORE.sales, saleData);
+    await writeAudit("sale_updated", { receiptNo: saleData.receiptNo, total, amountPaid, changeGiven });
+    showToast("Sale updated.");
+  } else {
+    const saleId = await addRecord(STORE.sales, saleData);
+    const savedSale = { ...saleData, id: saleId };
+    await writeAudit("sale_completed", { receiptNo: saleData.receiptNo, total, amountPaid, changeGiven });
+    showReceipt(savedSale);
+    showToast(`Sale completed. Change: ${formatMoney(changeGiven)}`);
+  }
+
   cart = [];
   $("saleCustomer").value = "";
+  resetSaleEditState();
   renderCart();
-  showToast(`Sale completed. Change: ${formatMoney(changeGiven)}`);
   await refreshAll();
   if (typeof queueAutoSync === "function") {
     queueAutoSync();
@@ -2402,6 +2572,7 @@ async function refreshAll() {
   await renderSuppliers();
   await renderUsers();
   await renderReports();
+  await renderSalesHistory();
   await renderDashboardMedicineSearch();
   renderCart();
   renderPurchaseLines();
@@ -2663,6 +2834,14 @@ function bindEvents() {
 
   $("addToCartBtn")?.addEventListener("click", addToCart);
   $("completeSaleBtn")?.addEventListener("click", completeSale);
+  $("cancelEditSaleBtn")?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    resetSaleEditState();
+    cart = [];
+    $("saleCustomer").value = "";
+    renderCart();
+  });
   $("clearCartBtn")?.addEventListener("click", () => { cart = []; renderCart(); });
   $("printReceiptBtn").addEventListener("click", async () => {
     await markReceiptAsPrinted();
@@ -2726,6 +2905,8 @@ function bindEvents() {
 
     if (action === "edit-medicine") openMedicineForm(id);
     if (action === "delete-medicine") deleteMedicine(id);
+    if (action === "edit-sale") editSale(id);
+    if (action === "delete-sale") deleteSale(id);
     if (action === "edit-supplier") openSupplierForm(id);
     if (action === "delete-supplier") deleteSupplier(id);
     if (action === "remove-cart") { cart.splice(index, 1); renderCart(); }
