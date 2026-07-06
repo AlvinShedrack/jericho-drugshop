@@ -100,7 +100,32 @@ function prepareRecordForCloud(storeName, record) {
   };
 }
 
+async function getCloudRow(storeName, localId) {
+  const { data, error } = await window.cloudClient
+    .from("cloud_records")
+    .select("*")
+    .eq("store_name", storeName)
+    .eq("local_id", String(localId))
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
 async function saveCloudRow(row) {
+  const existingRow = await getCloudRow(row.store_name, row.local_id);
+  if (existingRow) {
+    const existingTime = getRecordTimestamp(existingRow, existingRow.updated_at);
+    const newTime = getRecordTimestamp(row, row.updated_at);
+
+    if (existingTime >= newTime) {
+      return;
+    }
+  }
+
   const { error } = await window.cloudClient
     .from("cloud_records")
     .upsert([row], {
@@ -219,6 +244,47 @@ async function pullCloudStoreToLocal(storeName) {
   return imported;
 }
 
+async function pullCloudDeletionsFirst(storeName) {
+  const { data, error } = await window.cloudClient
+    .from("cloud_records")
+    .select("*")
+    .eq("store_name", storeName)
+    .eq("deleted", true)
+    .order("updated_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  let processed = 0;
+
+  for (const row of data || []) {
+    const rowId = row?.local_id;
+    if (rowId === undefined || rowId === null || rowId === "") {
+      continue;
+    }
+
+    const localRecord = await getById(storeName, rowId);
+    if (!localRecord) {
+      processed++;
+      continue;
+    }
+
+    const localTime = getRecordTime(localRecord);
+    const tombstoneTime = getRecordTimestamp(row, row.updated_at);
+
+    if (localTime > tombstoneTime) {
+      await saveCloudRow(prepareRecordForCloud(storeName, localRecord));
+    } else {
+      await deleteRecord(storeName, rowId);
+    }
+
+    processed++;
+  }
+
+  return processed;
+}
+
 async function pushLocalStoreToCloud(storeName) {
   const localRecords = await getAll(storeName);
 
@@ -241,6 +307,7 @@ async function pullAllCloudDataFirst() {
   let pulled = 0;
 
   for (const storeName of SYNC_STORES) {
+    pulled += await pullCloudDeletionsFirst(storeName);
     pulled += await pullCloudStoreToLocal(storeName);
   }
 
