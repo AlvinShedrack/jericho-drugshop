@@ -854,7 +854,7 @@ async function completeSale() {
   const saleType = $("saleType")?.value || "retail";
 
   const sale = {
-    receiptNo: `RX-${Date.now()}`,
+    receiptNo: `JD-${Date.now()}`,
     customerName: $("saleCustomer").value.trim() || "Walk-in customer",
     paymentMethod: $("salePaymentMethod").value,
     saleType,
