@@ -198,6 +198,23 @@ function prepareRecordForCloud(storeName, record) {
   };
 }
 function isDeletedRecord(record) {
+  return record?._deleted === true || String(record?._deleted).toLowerCase() === "true";
+}
+
+async function deleteMatchingLocalRecords(storeName, deletedRecord) {
+  const deletedKey = getRecordIdentityKey(storeName, deletedRecord);
+  const localRecords = await getAll(storeName);
+
+  for (const record of localRecords) {
+    const sameId = String(record.id) === String(deletedRecord.id);
+    const sameKey = deletedKey && getRecordIdentityKey(storeName, record) === deletedKey;
+
+    if (sameId || sameKey) {
+      await deleteRecord(storeName, record.id);
+    }
+  }
+}
+function isDeletedRecord(record) {
   return record?._deleted === true;
 }
 
