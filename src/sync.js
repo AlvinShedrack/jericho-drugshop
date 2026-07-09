@@ -21,6 +21,7 @@ const JERICHO_SYNC_STORES = [
 const JERICHO_DEVICE_ID_KEY = "jericho_device_id";
 const JERICHO_LAST_SYNC_KEY = "jericho_last_supabase_sync_at";
 const JERICHO_LOCAL_CHANGES_KEY = "jericho_has_local_changes_v3";
+const JERICHO_SYNC_AFTER_RELOAD_KEY = "jericho_sync_after_reload";
 
 window.__jerichoSyncBusy = false;
 window.__jerichoSyncTimer = null;
@@ -402,7 +403,12 @@ async function pullRecordsFromSupabase(options = {}) {
 
 async function syncNow(options = {}) {
   const silent = options.silent === true;
+  const skipHardRefresh = options.skipHardRefresh === true;
 
+  if (!silent && !skipHardRefresh) {
+    hardRefreshThenSync();
+    return;
+  }
   if (!navigator.onLine) {
     setSyncButtonState(false, "Offline");
 
@@ -546,10 +552,34 @@ function startAutoSync() {
 
   setSyncButtonState(false, navigator.onLine ? "Sync Now" : "Offline");
 }
+function hardRefreshThenSync() {
+  if (!navigator.onLine) {
+    setSyncButtonState(false, "Offline");
+    alert("You are offline. Connect to internet first.");
+    return;
+  }
 
+  sessionStorage.setItem(JERICHO_SYNC_AFTER_RELOAD_KEY, "true");
+
+  window.location.reload();
+}
+
+async function continueSyncAfterHardRefresh() {
+  const shouldSync = sessionStorage.getItem(JERICHO_SYNC_AFTER_RELOAD_KEY);
+
+  if (shouldSync !== "true") {
+    return;
+  }
+
+  sessionStorage.removeItem(JERICHO_SYNC_AFTER_RELOAD_KEY);
+
+  setTimeout(async () => {
+    await syncNow({ silent: false, skipHardRefresh: true });
+  }, 1000);
+}
 document.addEventListener(
   "click",
-  async event => {
+  event => {
     const button = event.target.closest(".sync-now-btn");
 
     if (!button) return;
@@ -557,7 +587,7 @@ document.addEventListener(
     event.preventDefault();
     event.stopImmediatePropagation();
 
-    await syncNow({ silent: false });
+    hardRefreshThenSync();
   },
   true
 );
@@ -565,8 +595,8 @@ document.addEventListener(
 document.addEventListener("DOMContentLoaded", () => {
   bindSyncButtons();
   setSyncButtonState(false, navigator.onLine ? "Sync Now" : "Offline");
+  continueSyncAfterHardRefresh();
 });
-
 window.pullRecordsFromSupabase = pullRecordsFromSupabase;
 window.syncRecordsToSupabase = syncRecordsToSupabase;
 window.queueAutoSync = queueAutoSync;
