@@ -22,6 +22,7 @@ const JERICHO_DEVICE_ID_KEY = "jericho_device_id";
 const JERICHO_LAST_SYNC_KEY = "jericho_last_supabase_sync_at";
 const JERICHO_LOCAL_CHANGES_KEY = "jericho_has_local_changes_v3";
 const JERICHO_SYNC_AFTER_RELOAD_KEY = "jericho_sync_after_reload";
+const JERICHO_LOCAL_CHANGES_KEY = "jericho_has_local_changes_v4";
 
 window.__jerichoSyncBusy = false;
 window.__jerichoSyncTimer = null;
@@ -69,7 +70,17 @@ function clearLocalChanges() {
 function hasLocalChanges() {
   return localStorage.getItem(JERICHO_LOCAL_CHANGES_KEY) === "true";
 }
+function markLocalChanges() {
+  localStorage.setItem(JERICHO_LOCAL_CHANGES_KEY, "true");
+}
 
+function clearLocalChanges() {
+  localStorage.removeItem(JERICHO_LOCAL_CHANGES_KEY);
+}
+
+function hasLocalChanges() {
+  return localStorage.getItem(JERICHO_LOCAL_CHANGES_KEY) === "true";
+}
 function setSyncButtonState(isSyncing, text) {
   document.querySelectorAll(".sync-now-btn").forEach(button => {
     button.disabled = false;
@@ -422,26 +433,59 @@ async function syncNow(options = {}) {
     return;
   }
 
+  let uploaded = 0;
   let downloaded = 0;
 
   try {
     window.__jerichoSyncBusy = true;
 
-    setSyncButtonState(true, "Clearing local data...");
-    showSyncMessage("Clearing local app data...");
-
     await dbReady;
 
-    // This is the important part.
-    // It clears the local browser app data like clearing site cookies/storage.
+    setSyncButtonState(true, "Syncing...");
+    showSyncMessage("Sync started...");
+
+    // If this device made edits, upload first before clearing local data.
+    if (hasLocalChanges()) {
+      setSyncButtonState(true, "Uploading local changes...");
+
+      for (const storeName of JERICHO_SYNC_STORES) {
+        const localRecords = await getAll(storeName);
+
+        for (const record of localRecords) {
+          if (record.id === undefined || record.id === null) continue;
+
+          const cloudRecord = prepareRecordForCloud(storeName, record);
+
+          const { error } = await getJerichoCloud().rpc(
+            "sync_jericho_record_replace",
+            {
+              p_store_name: cloudRecord.store_name,
+              p_local_id: cloudRecord.local_id,
+              p_device_id: cloudRecord.device_id,
+              p_data: cloudRecord.data,
+              p_updated_at: cloudRecord.updated_at || new Date().toISOString()
+            }
+          );
+
+          if (error) {
+            throw error;
+          }
+
+          uploaded += 1;
+        }
+      }
+
+      clearLocalChanges();
+    }
+
+    // Now clear local browser app data like clearing cookies/storage.
+    setSyncButtonState(true, "Clearing local data...");
+
     for (const storeName of JERICHO_SYNC_STORES) {
       await clearStore(storeName);
     }
 
-    localStorage.removeItem("jericho_has_local_changes");
-    localStorage.removeItem("jericho_has_local_changes_v3");
-    localStorage.removeItem("jericho_dirty_records_v2");
-
+    // Download fresh cloud data.
     setSyncButtonState(true, "Downloading fresh data...");
 
     const { data, error } = await getJerichoCloud()
@@ -476,12 +520,10 @@ async function syncNow(options = {}) {
 
     for (const storeName of JERICHO_SYNC_STORES) {
       const records = groupedRecords[storeName] || [];
-
       const uniqueMap = new Map();
 
       for (const record of records) {
         const key = getRecordIdentityKey(storeName, record);
-
         if (!key) continue;
 
         const existing = uniqueMap.get(key);
@@ -492,7 +534,6 @@ async function syncNow(options = {}) {
       }
 
       const cleanRecords = Array.from(uniqueMap.values());
-
       downloaded += cleanRecords.length;
 
       for (const record of cleanRecords) {
@@ -513,7 +554,7 @@ async function syncNow(options = {}) {
     }, 2500);
 
     if (!silent) {
-      alert(`Fresh sync complete.\nDownloaded: ${downloaded}`);
+      alert(`Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}`);
     }
   } catch (error) {
     console.error("SYNC STOPPED:", error);
@@ -542,7 +583,6 @@ function queueAutoSync() {
     await syncNow({ silent: true });
   }, 1500);
 }
-
 function scheduleAutoSync() {
   queueAutoSync();
 }
