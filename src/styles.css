@@ -2866,3 +2866,62 @@ body.is-authenticated .floating-sync-btn {
     grid-template-columns: 1fr !important;
   }
 }
+
+.labelled-entry-row {
+  align-items: end !important;
+}
+
+.field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.field-block label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.field-block input,
+.field-block select,
+.field-block button {
+  width: 100%;
+}
+
+.button-field button {
+  min-height: 42px;
+}
+
+.purchase-entry-row {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px !important;
+}
+
+.purchase-entry-row .field-block:first-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .purchase-entry-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .purchase-entry-row .field-block:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .labelled-entry-row,
+  .purchase-entry-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .purchase-entry-row .field-block:first-child {
+    grid-column: auto;
+  }
+}

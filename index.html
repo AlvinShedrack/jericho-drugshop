@@ -198,18 +198,33 @@
                 </select>
               </div>
             </div>
-            <div class="sale-add-row">
-              <input
-                id="saleMedicineSelect"
-                list="saleMedicineList"
-                type="text"
-                placeholder="Select or type medicine"
-                autocomplete="off"
-              />
-              <datalist id="saleMedicineList"></datalist>
-              <input id="saleQty" type="number" min="1" placeholder="Quantity" />
-              <input id="saleDiscount" type="number" min="0" placeholder="Discount" />
-              <button id="addToCartBtn" class="secondary-btn">Add To Cart</button>
+            <div class="sale-add-row labelled-entry-row">
+              <div class="field-block">
+                <label for="saleMedicineSelect">Medicine</label>
+                <input
+                  id="saleMedicineSelect"
+                  list="saleMedicineList"
+                  type="text"
+                  placeholder="Select or type medicine"
+                  autocomplete="off"
+                />
+                <datalist id="saleMedicineList"></datalist>
+              </div>
+
+              <div class="field-block">
+                <label for="saleQty">Quantity</label>
+                <input id="saleQty" type="number" min="1" placeholder="Enter quantity" />
+              </div>
+
+              <div class="field-block">
+                <label for="saleDiscount">Discount</label>
+                <input id="saleDiscount" type="number" min="0" placeholder="Enter discount" />
+              </div>
+
+              <div class="field-block button-field">
+                <label>&nbsp;</label>
+                <button id="addToCartBtn" class="secondary-btn">Add To Cart</button>
+              </div>
             </div>
             <div class="table-wrap">
               <table>
@@ -286,21 +301,48 @@
                 <input id="purchaseDate" type="text" placeholder="DD-MM-YYYY" />
               </div>
             </div>
-            <div class="sale-add-row">
-              <input
-                id="purchaseMedicineSelect"
-                list="purchaseMedicineList"
-                type="text"
-                placeholder="Select or type medicine"
-                autocomplete="off"
-              />
-              <datalist id="purchaseMedicineList"></datalist>
-              <input id="purchaseBatchNo" type="text" placeholder="Batch number" />
-              <input id="purchaseExpiryDate" type="text" placeholder="Expiry DD-MM-YYYY" />
-              <input id="purchaseQty" type="number" min="1" placeholder="Quantity" />
-              <input id="purchaseCost" type="number" min="0" placeholder="Buying price" />
-              <input id="purchaseRetailPrice" type="number" min="0" placeholder="Retail price" />
-              <button id="addPurchaseLineBtn" class="secondary-btn">Add Line</button>
+            <div class="sale-add-row labelled-entry-row purchase-entry-row">
+              <div class="field-block">
+                <label for="purchaseMedicineSelect">Medicine</label>
+                <input
+                  id="purchaseMedicineSelect"
+                  list="purchaseMedicineList"
+                  type="text"
+                  placeholder="Select or type medicine"
+                  autocomplete="off"
+                />
+                <datalist id="purchaseMedicineList"></datalist>
+              </div>
+
+              <div class="field-block">
+                <label for="purchaseBatchNo">Batch Number</label>
+                <input id="purchaseBatchNo" type="text" placeholder="Enter batch number" />
+              </div>
+
+              <div class="field-block">
+                <label for="purchaseExpiryDate">Expiry Date</label>
+                <input id="purchaseExpiryDate" type="text" placeholder="DD-MM-YYYY" />
+              </div>
+
+              <div class="field-block">
+                <label for="purchaseQty">Quantity</label>
+                <input id="purchaseQty" type="number" min="1" placeholder="Enter quantity" />
+              </div>
+
+              <div class="field-block">
+                <label for="purchaseCost">Buying Price</label>
+                <input id="purchaseCost" type="number" min="0" placeholder="Enter buying price" />
+              </div>
+
+              <div class="field-block">
+                <label for="purchaseRetailPrice">Retail Price</label>
+                <input id="purchaseRetailPrice" type="number" min="0" placeholder="Enter retail price" />
+              </div>
+
+              <div class="field-block button-field">
+                <label>&nbsp;</label>
+                <button id="addPurchaseLineBtn" class="secondary-btn">Add Line</button>
+              </div>
             </div>
             <div class="table-wrap">
               <table>
@@ -316,6 +358,36 @@
             <div class="checkout-line total"><span>Total Cost</span><strong id="purchaseTotal">USh 0</strong></div>
             <button id="completePurchaseBtn" class="primary-btn full pharmacist-admin-only">Save Purchase</button>
             <button id="clearPurchaseBtn" class="ghost-btn full">Clear Lines</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header split">
+            <div>
+              <h2>Saved Purchases</h2>
+              <p>All completed purchase records with edit and delete actions.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice</th>
+                  <th>Supplier</th>
+                  <th>Purchase Date</th>
+                  <th>Medicine</th>
+                  <th>Batch</th>
+                  <th>Expiry</th>
+                  <th>Qty</th>
+                  <th>Buying Price</th>
+                  <th>Retail Price</th>
+                  <th>Line Total</th>
+                  <th>Purchase Total</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="purchasesHistoryTable"></tbody>
+            </table>
           </div>
         </div>
         <div class="panel">

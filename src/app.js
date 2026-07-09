@@ -14,6 +14,7 @@ let cart = [];
 let purchaseLines = [];
 let currentReceiptSale = null;
 let editingSaleId = null;
+let editingPurchaseId = null;
 let deferredInstallPrompt = null;
 
 const BRAND = {
@@ -551,16 +552,43 @@ async function populateMedicineOptions() {
     $("purchaseMedicineSelect").placeholder = "Select or type medicine";
   }
 }
+function normalizeRecordId(id) {
+  const value = String(id ?? "").trim();
 
+  if (value !== "" && /^-?\d+$/.test(value)) {
+    return Number(value);
+  }
+
+  return value;
+}
+
+async function findLocalRecordById(storeName, id) {
+  const normalizedId = normalizeRecordId(id);
+
+  let record = await getById(storeName, normalizedId);
+
+  if (record) {
+    return record;
+  }
+
+  const records = await getAll(storeName);
+
+  return records.find(item => String(item.id) === String(id)) || null;
+}
 async function openMedicineForm(id = null) {
   await populateSupplierOptions();
+
   $("medicineForm").reset();
   $("medicineId").value = "";
   $("reorderLevel").value = 5;
 
   if (id) {
-    const med = await getById(STORE.medicines, id);
-    if (!med) return;
+    const med = await findLocalRecordById(STORE.medicines, id);
+
+    if (!med) {
+      return showToast("Medicine not found. Refresh and try again.");
+    }
+
     $("medicineModalTitle").textContent = "Edit Medicine";
     $("medicineId").value = med.id;
     $("medicineName").value = med.name || "";
@@ -577,12 +605,9 @@ async function openMedicineForm(id = null) {
   openModal("medicineModal");
 
   setTimeout(() => {
-  const firstField = $("medicineName");
-  if (firstField) {
-    firstField.scrollIntoView({ block: "start", behavior: "smooth" });
-    firstField.focus();
-  }
-}, 100);
+    const firstField = $("medicineName");
+    if (firstField) firstField.focus();
+  }, 100);
 }
 
 async function saveMedicine(event) {
@@ -594,7 +619,8 @@ async function saveMedicine(event) {
   }
 
   const id = $("medicineId").value;
-  const existing = id ? await getById(STORE.medicines, id) : null;
+  const existing = id ? await findLocalRecordById(STORE.medicines, id) : null;
+
   const record = {
     ...(existing || {}),
     name: $("medicineName").value.trim(),
@@ -612,9 +638,10 @@ async function saveMedicine(event) {
     return;
   }
 
-  if (id) {
+  if (existing) {
+    record.id = existing.id;
     await putRecord(STORE.medicines, record);
-    await writeAudit("medicine_updated", { id: Number(id), name: record.name });
+    await writeAudit("medicine_updated", { id: existing.id, name: record.name });
   } else {
     record.createdAt = new Date().toISOString();
     await addRecord(STORE.medicines, record);
@@ -624,6 +651,7 @@ async function saveMedicine(event) {
   closeModal("medicineModal");
   showToast("Medicine saved.");
   await refreshAll();
+
   if (typeof queueAutoSync === "function") {
     queueAutoSync();
   }
@@ -665,8 +693,29 @@ async function deleteMedicine(id) {
   if (!confirm(`Delete ${med.name}?`)) return;
 
   try {
-    await deleteEverywhere(STORE.medicines, med.id);
-    await writeAudit("medicine_deleted", { id: med.id, name: med.name });
+    let deleted = false;
+
+    if (typeof deleteEverywhere === "function" && navigator.onLine) {
+      try {
+        await deleteEverywhere(STORE.medicines, med.id);
+        deleted = true;
+      } catch (cloudError) {
+        console.warn("Cloud delete failed, trying local delete:", cloudError);
+      }
+    }
+
+    if (!deleted) {
+      if (typeof deleteRecord !== "function") {
+        throw new Error("Local delete function is missing. Check db.js is loaded before app.js.");
+      }
+
+      await deleteRecord(STORE.medicines, med.id);
+    }
+
+    await writeAudit("medicine_deleted", {
+      id: med.id,
+      name: med.name
+    });
 
     showToast("Medicine deleted.");
     await refreshAll();
@@ -703,8 +752,12 @@ async function openSupplierForm(id = null) {
   $("supplierId").value = "";
 
   if (id) {
-    const supplier = await getById(STORE.suppliers, id);
-    if (!supplier) return;
+    const supplier = await findLocalRecordById(STORE.suppliers, id);
+
+    if (!supplier) {
+      return showToast("Supplier not found. Refresh and try again.");
+    }
+
     $("supplierModalTitle").textContent = "Edit Supplier";
     $("supplierId").value = supplier.id;
     $("supplierName").value = supplier.name || "";
@@ -750,10 +803,14 @@ async function renderDashboardMedicineSearch() {
 
 async function saveSupplier(event) {
   event.preventDefault();
-  if (!requireRole(["Administrator", "Director"])) return showToast("Not allowed.");
+
+  if (!requireRole(["Administrator", "Director"])) {
+    return showToast("Not allowed.");
+  }
 
   const id = $("supplierId").value;
-  const existing = id ? await getById(STORE.suppliers, id) : null;
+  const existing = id ? await findLocalRecordById(STORE.suppliers, id) : null;
+
   const record = {
     ...(existing || {}),
     name: $("supplierName").value.trim(),
@@ -763,31 +820,49 @@ async function saveSupplier(event) {
     updatedAt: new Date().toISOString()
   };
 
-  if (!record.name) return showToast("Supplier name is required.");
+  if (!record.name) {
+    return showToast("Supplier name is required.");
+  }
 
-  if (id) await putRecord(STORE.suppliers, record);
-  else await addRecord(STORE.suppliers, { ...record, createdAt: new Date().toISOString() });
+  if (existing) {
+    record.id = existing.id;
+    await putRecord(STORE.suppliers, record);
+    await writeAudit("supplier_updated", { id: existing.id, name: record.name });
+  } else {
+    record.createdAt = new Date().toISOString();
+    await addRecord(STORE.suppliers, record);
+    await writeAudit("supplier_created", { name: record.name });
+  }
 
-  await writeAudit(id ? "supplier_updated" : "supplier_created", { name: record.name });
   closeModal("supplierModal");
   showToast("Supplier saved.");
   await refreshAll();
+
   if (typeof queueAutoSync === "function") {
     queueAutoSync();
   }
 }
 
 async function deleteSupplier(id) {
-  if (!requireRole(["Administrator", "Director"])) return showToast("Not allowed.");
+  if (!requireRole(["Administrator", "Director"])) {
+    return showToast("Not allowed.");
+  }
 
-  const supplier = await getById(STORE.suppliers, id);
-  if (!supplier) return;
+  const supplier = await findLocalRecordById(STORE.suppliers, id);
+
+  if (!supplier) {
+    return showToast("Supplier not found. Refresh and try again.");
+  }
 
   if (!confirm(`Delete supplier ${supplier.name}?`)) return;
 
   try {
-    await deleteEverywhere(STORE.suppliers, id);
-    await writeAudit("supplier_deleted", { id, name: supplier.name });
+    await deleteEverywhere(STORE.suppliers, supplier.id);
+
+    await writeAudit("supplier_deleted", {
+      id: supplier.id,
+      name: supplier.name
+    });
 
     showToast("Supplier deleted.");
     await refreshAll();
@@ -800,7 +875,6 @@ async function deleteSupplier(id) {
     showToast(error.message || "Supplier delete failed.");
   }
 }
-
 async function addToCart() {
   const saleMedicineSelect = $("saleMedicineSelect");
   const saleQtyInput = $("saleQty");
@@ -895,13 +969,15 @@ function resetSaleEditState() {
 }
 
 async function editSale(id) {
-  const sale = await getById(STORE.sales, id);
+  const sale = await findLocalRecordById(STORE.sales, id);
+
   if (!sale) {
-    return showToast("Sale not found.");
+    return showToast("Sale not found. Refresh and try again.");
   }
 
-  editingSaleId = id;
+  editingSaleId = sale.id;
   cart = Array.isArray(sale.lines) ? sale.lines.map(line => ({ ...line })) : [];
+
   $("saleCustomer").value = sale.customerName || "";
   $("salePaymentMethod").value = sale.paymentMethod || "Cash";
   $("saleType").value = sale.saleType || "retail";
@@ -994,68 +1070,99 @@ async function deleteSale(id) {
   }
 }
 async function completeSale() {
-  if (!cart.length) return showToast("Cart is empty.");
+  if (!cart.length) {
+    return showToast("Cart is empty.");
+  }
 
-  const medicines = await getAll(STORE.medicines);
+  const subtotal = cart.reduce((sum, item) => {
+    return sum + (Number(item.qty || 0) * Number(item.sellingPrice || 0));
+  }, 0);
 
+  const discount = cart.reduce((sum, item) => {
+    return sum + Number(item.discount || 0);
+  }, 0);
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.qty * item.sellingPrice), 0);
-  const discount = cart.reduce((sum, item) => sum + item.discount, 0);
   const total = Math.max(0, subtotal - discount);
 
-  let amountPaid = Number(prompt(`Grand total is ${formatMoney(total)}.\nEnter amount paid by customer:`) || 0);
+  const amountPaid = Number(
+    prompt(`Grand total is ${formatMoney(total)}.\nEnter amount paid by customer:`) || 0
+  );
 
   if (Number.isNaN(amountPaid) || amountPaid < total) {
     return showToast("Amount paid must be equal to or greater than total.");
   }
 
   const changeGiven = amountPaid - total;
-
-  const profit = cart.reduce((sum, item) => {
-    const itemRevenue = Math.max(0, (item.qty * item.sellingPrice) - item.discount);
-    const itemCost = item.qty * item.buyingPrice;
-    return sum + (itemRevenue - itemCost);
-  }, 0);
-
-  for (const item of cart) {
-    const med = await getById(STORE.medicines, item.medicineId);
-    med.quantity = Number(med.quantity) - Number(item.qty);
-    med.updatedAt = new Date().toISOString();
-    await putRecord(STORE.medicines, med);
-  }
-
   const saleType = $("saleType")?.value || "retail";
+
   let originalSale = null;
 
   if (editingSaleId) {
-    originalSale = await getById(STORE.sales, editingSaleId);
+    originalSale = await findLocalRecordById(STORE.sales, editingSaleId);
+
     if (!originalSale) {
-      showToast("Original sale not found.");
       resetSaleEditState();
-      return;
+      return showToast("Original sale not found.");
     }
   }
 
-  const stockRecords = await getAll(STORE.medicines);
+  const originalLines = editingSaleId && Array.isArray(originalSale?.lines)
+    ? originalSale.lines
+    : [];
 
-  if (editingSaleId && originalSale?.lines) {
-    for (const item of originalSale.lines) {
-      const med = stockRecords.find(m => Number(m.id) === Number(item.medicineId));
+  for (const item of cart) {
+    const med = await findLocalRecordById(STORE.medicines, item.medicineId);
+
+    if (!med) {
+      return showToast(`Medicine not found: ${item.name}`);
+    }
+
+    const originalQty = originalLines
+      .filter(line => String(line.medicineId) === String(item.medicineId))
+      .reduce((sum, line) => sum + Number(line.qty || 0), 0);
+
+    const availableQty = Number(med.quantity || 0) + originalQty;
+
+    if (Number(item.qty || 0) > availableQty) {
+      return showToast(`Insufficient stock for ${item.name}.`);
+    }
+  }
+
+  const profit = cart.reduce((sum, item) => {
+    const itemRevenue = Math.max(
+      0,
+      (Number(item.qty || 0) * Number(item.sellingPrice || 0)) - Number(item.discount || 0)
+    );
+
+    const itemCost = Number(item.qty || 0) * Number(item.buyingPrice || 0);
+
+    return sum + (itemRevenue - itemCost);
+  }, 0);
+
+  if (editingSaleId && originalLines.length) {
+    for (const item of originalLines) {
+      const med = await findLocalRecordById(STORE.medicines, item.medicineId);
       if (!med) continue;
+
       med.quantity = Number(med.quantity || 0) + Number(item.qty || 0);
       med.updatedAt = new Date().toISOString();
+
       await putRecord(STORE.medicines, med);
     }
   }
 
   for (const item of cart) {
-    const med = await getById(STORE.medicines, item.medicineId);
-    if (!med || Number(med.quantity) < Number(item.qty)) {
-      return showToast(`Insufficient stock for ${item.name}.`);
-    }
+    const med = await findLocalRecordById(STORE.medicines, item.medicineId);
+    if (!med) continue;
+
+    med.quantity = Number(med.quantity || 0) - Number(item.qty || 0);
+    med.updatedAt = new Date().toISOString();
+
+    await putRecord(STORE.medicines, med);
   }
 
   const saleData = {
+    ...(originalSale || {}),
     receiptNo: editingSaleId ? originalSale.receiptNo : `JD-${Date.now()}`,
     customerName: $("saleCustomer").value.trim() || "Walk-in customer",
     paymentMethod: $("salePaymentMethod").value,
@@ -1073,22 +1180,30 @@ async function completeSale() {
     updatedAt: new Date().toISOString()
   };
 
-  for (const item of cart) {
-    const med = await getById(STORE.medicines, item.medicineId);
-    med.quantity = Number(med.quantity) - Number(item.qty);
-    med.updatedAt = new Date().toISOString();
-    await putRecord(STORE.medicines, med);
-  }
-
   if (editingSaleId) {
-    saleData.id = Number(editingSaleId);
+    saleData.id = originalSale.id;
+
     await putRecord(STORE.sales, saleData);
-    await writeAudit("sale_updated", { receiptNo: saleData.receiptNo, total, amountPaid, changeGiven });
+    await writeAudit("sale_updated", {
+      receiptNo: saleData.receiptNo,
+      total,
+      amountPaid,
+      changeGiven
+    });
+
+    showReceipt(saleData);
     showToast("Sale updated.");
   } else {
     const saleId = await addRecord(STORE.sales, saleData);
     const savedSale = { ...saleData, id: saleId };
-    await writeAudit("sale_completed", { receiptNo: saleData.receiptNo, total, amountPaid, changeGiven });
+
+    await writeAudit("sale_completed", {
+      receiptNo: saleData.receiptNo,
+      total,
+      amountPaid,
+      changeGiven
+    });
+
     showReceipt(savedSale);
     showToast(`Sale completed. Change: ${formatMoney(changeGiven)}`);
   }
@@ -1097,7 +1212,9 @@ async function completeSale() {
   $("saleCustomer").value = "";
   resetSaleEditState();
   renderCart();
+
   await refreshAll();
+
   if (typeof queueAutoSync === "function") {
     queueAutoSync();
   }
@@ -1221,6 +1338,180 @@ function showReceipt(sale) {
   openModal("receiptModal");
 }
 
+
+async function renderPurchaseHistory() {
+  const purchases = (await getAll(STORE.purchases))
+    .filter(purchase => {
+      return purchase?._deleted !== true && String(purchase?._deleted).toLowerCase() !== "true";
+    });
+
+  const suppliers = await getAll(STORE.suppliers);
+
+  const sorted = purchases.sort((a, b) => {
+    const dateA = new Date(toIsoDate(a.purchaseDate) || a.createdAt || 0);
+    const dateB = new Date(toIsoDate(b.purchaseDate) || b.createdAt || 0);
+    return dateB - dateA;
+  });
+
+  const rows = [];
+
+  for (const purchase of sorted) {
+    const supplier = suppliers.find(item => String(item.id) === String(purchase.supplierId));
+    const lines = Array.isArray(purchase.lines) && purchase.lines.length ? purchase.lines : [{}];
+
+    for (const line of lines) {
+      rows.push(`
+        <tr>
+          <td>${escapeHtml(purchase.invoiceNo || "")}</td>
+          <td>${escapeHtml(supplier?.name || "No supplier")}</td>
+          <td>${escapeHtml(formatDateDisplay(purchase.purchaseDate || purchase.createdAt))}</td>
+          <td>${escapeHtml(line.name || "")}</td>
+          <td>${escapeHtml(line.batchNo || "")}</td>
+          <td>${escapeHtml(formatDateDisplay(line.expiryDate || ""))}</td>
+          <td>${Number(line.qty || 0)}</td>
+          <td>${formatMoney(line.unitCost || 0)}</td>
+          <td>${formatMoney(line.retailPrice || 0)}</td>
+          <td>${formatMoney(Number(line.qty || 0) * Number(line.unitCost || 0))}</td>
+          <td>${formatMoney(purchase.total || 0)}</td>
+          <td>
+            <button class="table-btn" data-action="edit-purchase" data-id="${purchase.id}">Edit</button>
+            <button class="table-btn danger" data-action="delete-purchase" data-id="${purchase.id}">Delete</button>
+          </td>
+        </tr>
+      `);
+    }
+  }
+
+  if ($("purchasesHistoryTable")) {
+    $("purchasesHistoryTable").innerHTML = rows.length
+      ? rows.join("")
+      : `<tr><td colspan="12">No saved purchases yet.</td></tr>`;
+  }
+}
+async function editPurchase(id) {
+  if (!requireRole(["Administrator", "Director"])) {
+    return showToast("Not allowed.");
+  }
+
+  await populateSupplierOptions();
+  await populateMedicineOptions();
+
+  const purchase = await findLocalRecordById(STORE.purchases, id);
+
+  if (!purchase) {
+    return showToast("Purchase not found. Refresh and try again.");
+  }
+
+  editingPurchaseId = purchase.id;
+
+  $("purchaseSupplierSelect").value = String(purchase.supplierId || "");
+  $("purchaseInvoice").value = purchase.invoiceNo || "";
+  $("purchaseDate").value = formatDateDisplay(purchase.purchaseDate || purchase.createdAt || "");
+
+  purchaseLines = Array.isArray(purchase.lines)
+    ? purchase.lines.map(line => ({ ...line }))
+    : [];
+
+  const firstLine = purchaseLines[0] || null;
+
+  if (firstLine) {
+    $("purchaseMedicineSelect").value = firstLine.name || "";
+    $("purchaseBatchNo").value = firstLine.batchNo || "";
+    $("purchaseExpiryDate").value = formatDateDisplay(firstLine.expiryDate || "");
+    $("purchaseQty").value = firstLine.qty || "";
+    $("purchaseCost").value = firstLine.unitCost || "";
+    $("purchaseRetailPrice").value = firstLine.retailPrice || "";
+  } else {
+    $("purchaseMedicineSelect").value = "";
+    $("purchaseBatchNo").value = "";
+    $("purchaseExpiryDate").value = "";
+    $("purchaseQty").value = "";
+    $("purchaseCost").value = "";
+    $("purchaseRetailPrice").value = "";
+  }
+
+  renderPurchaseLines();
+
+  const btn = $("completePurchaseBtn");
+  if (btn) {
+    btn.textContent = "Update Purchase";
+  }
+
+  showPage("purchases");
+
+  setTimeout(() => {
+    $("purchaseInvoice")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 100);
+
+  showToast("Purchase loaded for editing.");
+}
+
+async function deletePurchase(id) {
+  if (!requireRole(["Administrator", "Director"])) {
+    return showToast("Not allowed.");
+  }
+
+  const purchase = await findLocalRecordById(STORE.purchases, id);
+
+  if (!purchase) {
+    return showToast("Purchase not found. Refresh and try again.");
+  }
+
+  if (!confirm(`Delete purchase ${purchase.invoiceNo}? This will reduce stock.`)) {
+    return;
+  }
+
+  try {
+    if (Array.isArray(purchase.lines)) {
+      for (const line of purchase.lines) {
+        const med = await findLocalRecordById(STORE.medicines, line.medicineId);
+        if (!med) continue;
+
+        med.quantity = Math.max(0, Number(med.quantity || 0) - Number(line.qty || 0));
+        med.updatedAt = new Date().toISOString();
+
+        await putRecord(STORE.medicines, med);
+      }
+    }
+
+    if (typeof deleteEverywhere === "function" && navigator.onLine) {
+      try {
+        await deleteEverywhere(STORE.purchases, purchase.id);
+      } catch (cloudError) {
+        console.warn("Cloud delete failed, marking local purchase deleted:", cloudError);
+      }
+    }
+
+    const deletedPurchase = {
+      ...purchase,
+      _deleted: true,
+      deletedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await putRecord(STORE.purchases, deletedPurchase);
+
+    await writeAudit("purchase_deleted", {
+      id: purchase.id,
+      invoiceNo: purchase.invoiceNo,
+      total: purchase.total
+    });
+
+    showToast("Purchase deleted and stock adjusted.");
+
+    await renderPurchaseHistory();
+    await renderInventory();
+    await renderDashboard();
+    await populateMedicineOptions();
+
+    if (typeof queueAutoSync === "function") {
+      queueAutoSync();
+    }
+  } catch (error) {
+    console.error("Delete purchase error:", error);
+    showToast(error.message || "Purchase delete failed.");
+  }
+}
 function renderPurchaseLines() {
   $("purchaseLinesTable").innerHTML = purchaseLines.length ? purchaseLines.map((item, index) => `
     <tr>
@@ -1236,6 +1527,7 @@ function renderPurchaseLines() {
   `).join("") : `<tr><td colspan="8">No purchase lines.</td></tr>`;
 
   const total = purchaseLines.reduce((sum, item) => sum + (item.qty * item.unitCost), 0);
+ 
   $("purchaseTotal").textContent = formatMoney(total);
 }
 
@@ -1283,19 +1575,66 @@ async function addPurchaseLine() {
 }
 
 async function completePurchase() {
-  if (!requireRole(["Administrator", "Director"])) return showToast("Not allowed.");
-  if (!purchaseLines.length) return showToast("No purchase lines.");
+  if (!requireRole(["Administrator", "Director"])) {
+    return showToast("Not allowed.");
+  }
 
-  const supplierId = Number($("purchaseSupplierSelect").value);
+  if (!purchaseLines.length) {
+    return showToast("No purchase lines.");
+  }
+
+  const supplierId = Number($("purchaseSupplierSelect").value || 0);
   const invoiceNo = $("purchaseInvoice").value.trim() || `PINV-${Date.now()}`;
-  const purchaseDate = normalizeDateInput($("purchaseDate").value || formatDateDisplay(new Date().toISOString()));
-  const total = purchaseLines.reduce((sum, item) => sum + (item.qty * item.unitCost), 0);
+  const purchaseDate = normalizeDateInput(
+    $("purchaseDate").value || formatDateDisplay(new Date().toISOString())
+  );
+
+  const total = purchaseLines.reduce((sum, item) => {
+    return sum + (Number(item.qty || 0) * Number(item.unitCost || 0));
+  }, 0);
+
+  let originalPurchase = null;
+
+  if (editingPurchaseId) {
+    originalPurchase = await findLocalRecordById(STORE.purchases, editingPurchaseId);
+
+    if (!originalPurchase) {
+      editingPurchaseId = null;
+      return showToast("Original purchase not found.");
+    }
+
+    if (Array.isArray(originalPurchase.lines)) {
+      for (const oldLine of originalPurchase.lines) {
+        const oldMed = await findLocalRecordById(STORE.medicines, oldLine.medicineId);
+        if (!oldMed) continue;
+
+        oldMed.quantity = Math.max(
+          0,
+          Number(oldMed.quantity || 0) - Number(oldLine.qty || 0)
+        );
+
+        oldMed.updatedAt = new Date().toISOString();
+        await putRecord(STORE.medicines, oldMed);
+      }
+    }
+  }
 
   for (const line of purchaseLines) {
-    let med = line.medicineId ? await getById(STORE.medicines, line.medicineId) : null;
+    let med = line.medicineId
+      ? await findLocalRecordById(STORE.medicines, line.medicineId)
+      : null;
 
     if (!med) {
-      const newMedicineId = await addRecord(STORE.medicines, {
+      const medicines = await getAll(STORE.medicines);
+
+      med = medicines.find(item =>
+        String(item.name || "").trim().toLowerCase() ===
+        String(line.name || "").trim().toLowerCase()
+      );
+    }
+
+    if (!med) {
+      const newMedicineData = {
         name: line.name,
         genericName: "",
         category: "",
@@ -1310,18 +1649,25 @@ async function completePurchase() {
         notes: "Created from purchase entry",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      });
+      };
 
-      med = await getById(STORE.medicines, newMedicineId);
-      line.medicineId = newMedicineId;
+      const newMedicineId = await addRecord(STORE.medicines, newMedicineData);
+      const medicinesAfterCreate = await getAll(STORE.medicines);
+
+      med = medicinesAfterCreate.find(item =>
+        String(item.id) === String(newMedicineId) ||
+        String(item.name || "").trim().toLowerCase() ===
+        String(line.name || "").trim().toLowerCase()
+      );
+
+      if (!med) {
+        return showToast(`Could not create medicine: ${line.name}`);
+      }
     }
 
-    if (!med) continue;
-
-    med.quantity = Number(med.quantity || 0) + Number(line.qty);
+    med.quantity = Number(med.quantity || 0) + Number(line.qty || 0);
     med.buyingPrice = Number(line.unitCost || med.buyingPrice || 0);
     med.sellingPrice = Number(line.retailPrice || med.sellingPrice || 0);
-
     med.batchNo = line.batchNo;
     med.expiryDate = line.expiryDate;
 
@@ -1332,27 +1678,47 @@ async function completePurchase() {
     med.updatedAt = new Date().toISOString();
 
     await putRecord(STORE.medicines, med);
+    line.medicineId = med.id;
   }
 
-  await addRecord(STORE.purchases, {
+  const purchaseData = {
+    ...(originalPurchase || {}),
     supplierId,
     invoiceNo,
     purchaseDate,
     total,
     lines: purchaseLines.map(line => ({ ...line })),
-    createdBy: currentUser.id,
-    createdByName: currentUser.name,
-    createdAt: new Date().toISOString(),
+    createdBy: originalPurchase?.createdBy || currentUser.id,
+    createdByName: originalPurchase?.createdByName || currentUser.name,
+    createdAt: originalPurchase?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
-  });
+  };
 
-  await writeAudit("purchase_saved", { invoiceNo, total });
+  if (editingPurchaseId) {
+    purchaseData.id = originalPurchase.id;
+    await putRecord(STORE.purchases, purchaseData);
+    await writeAudit("purchase_updated", { invoiceNo, total });
+    showToast("Purchase updated and stock adjusted.");
+  } else {
+    await addRecord(STORE.purchases, purchaseData);
+    await writeAudit("purchase_saved", { invoiceNo, total });
+    showToast("Purchase saved and stock updated.");
+  }
+
+  editingPurchaseId = null;
+
+  const btn = $("completePurchaseBtn");
+  if (btn) {
+    btn.textContent = "Save Purchase";
+  }
+
   purchaseLines = [];
   $("purchaseInvoice").value = "";
   $("purchaseDate").value = "";
+
   renderPurchaseLines();
-  showToast("Purchase saved and stock updated.");
   await refreshAll();
+
   if (typeof queueAutoSync === "function") {
     queueAutoSync();
   }
@@ -2652,6 +3018,7 @@ async function refreshAll() {
   await renderDashboardMedicineSearch();
   renderCart();
   renderPurchaseLines();
+  await renderPurchaseHistory();
   await renderPurchaseExpenses();
 }
 function printElement(elementId, title = "Print") {
@@ -2908,8 +3275,7 @@ function bindEvents() {
   $("addSupplierBtn")?.addEventListener("click", () => openSupplierForm());
   $("supplierForm")?.addEventListener("submit", saveSupplier);
 
-  $("addToCartBtn")?.addEventListener("click", addToCart);
-  $("completeSaleBtn")?.addEventListener("click", completeSale);
+
   $("cancelEditSaleBtn")?.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
@@ -2919,19 +3285,57 @@ function bindEvents() {
     renderCart();
   });
   $("clearCartBtn")?.addEventListener("click", () => { cart = []; renderCart(); });
-  $("printReceiptBtn").addEventListener("click", async () => {
-    await markReceiptAsPrinted();
-    printElement("receiptContent", "Sales Receipt");
-
-    if (isDispenser()) {
-      showToast("Receipt printed. This sale is now locked.");
+  function runAction(event, action, errorMessage) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
     }
+
+    Promise.resolve()
+      .then(action)
+      .catch(error => {
+        console.error(errorMessage, error);
+        showToast(error.message || errorMessage);
+      });
+  }
+
+  $("addToCartBtn")?.addEventListener("click", event => {
+    runAction(event, addToCart, "Could not add medicine to cart.");
+  });
+
+  $("completeSaleBtn")?.addEventListener("click", event => {
+    runAction(event, completeSale, "Could not complete sale.");
+  });
+
+  $("printReceiptBtn")?.addEventListener("click", event => {
+    runAction(event, async () => {
+      await markReceiptAsPrinted();
+      printElement("receiptContent", "Sales Receipt");
+
+      if (isDispenser()) {
+        showToast("Receipt printed. This sale is now locked.");
+      }
+    }, "Could not print receipt.");
+  });
+
+  $("addPurchaseLineBtn")?.addEventListener("click", event => {
+    runAction(event, addPurchaseLine, "Could not add purchase line.");
+  });
+
+  $("completePurchaseBtn")?.addEventListener("click", event => {
+    runAction(event, completePurchase, "Could not save purchase.");
+  });
+
+  $("clearPurchaseBtn")?.addEventListener("click", event => {
+    runAction(event, () => {
+      purchaseLines = [];
+      renderPurchaseLines();
+    }, "Could not clear purchase lines.");
   });
   $("printPageBtn")?.addEventListener("click", printOrExportPagePdf);
 
   $("expenseForm")?.addEventListener("submit", savePurchaseExpense);
-  $("addPurchaseLineBtn")?.addEventListener("click", addPurchaseLine);
-  $("completePurchaseBtn")?.addEventListener("click", completePurchase);
+
   $("clearPurchaseBtn").addEventListener("click", () => { purchaseLines = []; renderPurchaseLines(); });
 
   $("refreshReportsBtn")?.addEventListener("click", renderReports);
@@ -2979,12 +3383,42 @@ function bindEvents() {
     const id = target.dataset.id;
     const index = Number(target.dataset.index);
 
-    if (action === "edit-medicine") openMedicineForm(id);
-    if (action === "delete-medicine") deleteMedicine(id);
-    if (action === "edit-sale") editSale(id);
-    if (action === "delete-sale") deleteSale(id);
-    if (action === "edit-supplier") openSupplierForm(id);
-    if (action === "delete-supplier") deleteSupplier(id);
+    if (action === "edit-medicine") {
+      event.preventDefault();
+      openMedicineForm(id);
+    }
+
+    if (action === "delete-medicine") {
+      event.preventDefault();
+      deleteMedicine(id);
+    }
+
+    if (action === "edit-supplier") {
+      event.preventDefault();
+      openSupplierForm(id);
+    }
+
+    if (action === "delete-supplier") {
+      event.preventDefault();
+      deleteSupplier(id);
+    }
+
+    if (action === "edit-purchase") {
+      event.preventDefault();
+      editPurchase(id);
+    }
+
+    if (action === "delete-purchase") {
+      event.preventDefault();
+      deletePurchase(id);
+    }
+    if (action === "edit-sale") {
+      runAction(event, () => editSale(id), "Could not edit sale.");
+    }
+    if (action === "delete-sale") {
+      runAction(event, () => deleteSale(id), "Could not delete sale.");
+    }
+
     if (action === "remove-cart") { cart.splice(index, 1); renderCart(); }
     if (action === "remove-purchase-line") { purchaseLines.splice(index, 1); renderPurchaseLines(); }
     if (action === "delete-expense") deletePurchaseExpense(id);
