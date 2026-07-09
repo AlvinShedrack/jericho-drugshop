@@ -403,12 +403,7 @@ async function pullRecordsFromSupabase(options = {}) {
 
 async function syncNow(options = {}) {
   const silent = options.silent === true;
-  const skipHardRefresh = options.skipHardRefresh === true;
 
-  if (!silent && !skipHardRefresh) {
-    hardRefreshThenSync();
-    return;
-  }
   if (!navigator.onLine) {
     setSyncButtonState(false, "Offline");
 
@@ -427,17 +422,85 @@ async function syncNow(options = {}) {
     return;
   }
 
-  let uploaded = 0;
   let downloaded = 0;
 
   try {
     window.__jerichoSyncBusy = true;
 
-    setSyncButtonState(true, "Syncing...");
-    showSyncMessage("Sync started...");
+    setSyncButtonState(true, "Clearing local data...");
+    showSyncMessage("Clearing local app data...");
 
-    uploaded = await syncRecordsToSupabase({ silent });
-    downloaded = await freshDownloadFromCloud({ silent });
+    await dbReady;
+
+    // This is the important part.
+    // It clears the local browser app data like clearing site cookies/storage.
+    for (const storeName of JERICHO_SYNC_STORES) {
+      await clearStore(storeName);
+    }
+
+    localStorage.removeItem("jericho_has_local_changes");
+    localStorage.removeItem("jericho_has_local_changes_v3");
+    localStorage.removeItem("jericho_dirty_records_v2");
+
+    setSyncButtonState(true, "Downloading fresh data...");
+
+    const { data, error } = await getJerichoCloud()
+      .from(JERICHO_SYNC_TABLE)
+      .select("*")
+      .in("store_name", JERICHO_SYNC_STORES)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const groupedRecords = {};
+
+    JERICHO_SYNC_STORES.forEach(storeName => {
+      groupedRecords[storeName] = [];
+    });
+
+    (data || []).forEach(row => {
+      if (!groupedRecords[row.store_name]) return;
+
+      const record = recordFromCloud(row);
+
+      const isDeleted =
+        record?._deleted === true ||
+        String(record?._deleted).toLowerCase() === "true";
+
+      if (!isDeleted) {
+        groupedRecords[row.store_name].push(record);
+      }
+    });
+
+    for (const storeName of JERICHO_SYNC_STORES) {
+      const records = groupedRecords[storeName] || [];
+
+      const uniqueMap = new Map();
+
+      for (const record of records) {
+        const key = getRecordIdentityKey(storeName, record);
+
+        if (!key) continue;
+
+        const existing = uniqueMap.get(key);
+
+        if (!existing || getRecordTime(record) >= getRecordTime(existing)) {
+          uniqueMap.set(key, record);
+        }
+      }
+
+      const cleanRecords = Array.from(uniqueMap.values());
+
+      downloaded += cleanRecords.length;
+
+      for (const record of cleanRecords) {
+        await putRecord(storeName, record);
+      }
+    }
+
+    localStorage.setItem(JERICHO_LAST_SYNC_KEY, new Date().toISOString());
 
     if (typeof refreshAll === "function") {
       await refreshAll();
@@ -450,7 +513,7 @@ async function syncNow(options = {}) {
     }, 2500);
 
     if (!silent) {
-      alert(`Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}`);
+      alert(`Fresh sync complete.\nDownloaded: ${downloaded}`);
     }
   } catch (error) {
     console.error("SYNC STOPPED:", error);
