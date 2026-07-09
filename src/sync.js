@@ -21,7 +21,6 @@ const JERICHO_SYNC_STORES = [
 
 const JERICHO_DEVICE_ID_KEY = "jericho_device_id";
 const JERICHO_LAST_SYNC_KEY = "jericho_last_supabase_sync_at";
-
 const JERICHO_SYNC_AFTER_RELOAD_KEY = "jericho_sync_after_reload";
 const JERICHO_LOCAL_CHANGES_KEY = "jericho_has_local_changes_v4";
 
@@ -412,9 +411,39 @@ async function freshDownloadFromCloud(options = {}) {
 async function pullRecordsFromSupabase(options = {}) {
   return freshDownloadFromCloud(options);
 }
+async function clearBrowserDataForSync() {
+  // Clear normal cookies for this site
+  document.cookie.split(";").forEach(cookie => {
+    const name = cookie.split("=")[0].trim();
 
+    if (!name) return;
+
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+  });
+
+  // Clear app local storage. This will log users out.
+  localStorage.clear();
+
+  // Clear browser cache for this app if available
+  if ("caches" in window) {
+    const cacheNames = await caches.keys();
+
+    for (const cacheName of cacheNames) {
+      await caches.delete(cacheName);
+    }
+  }
+
+  // Clear IndexedDB stores used by the app
+  await dbReady;
+
+  for (const storeName of JERICHO_SYNC_STORES) {
+    await clearStore(storeName);
+  }
+}
 async function syncNow(options = {}) {
   const silent = options.silent === true;
+  const clearCookiesFirst = options.clearCookiesFirst === true;
 
   if (!navigator.onLine) {
     setSyncButtonState(false, "Offline");
@@ -434,59 +463,21 @@ async function syncNow(options = {}) {
     return;
   }
 
-  let uploaded = 0;
   let downloaded = 0;
 
   try {
     window.__jerichoSyncBusy = true;
 
-    await dbReady;
-
     setSyncButtonState(true, "Syncing...");
     showSyncMessage("Sync started...");
 
-    // If this device made edits, upload first before clearing local data.
-    if (hasLocalChanges()) {
-      setSyncButtonState(true, "Uploading local changes...");
-
-      for (const storeName of JERICHO_SYNC_STORES) {
-        const localRecords = await getAll(storeName);
-
-        for (const record of localRecords) {
-          if (record.id === undefined || record.id === null) continue;
-
-          const cloudRecord = prepareRecordForCloud(storeName, record);
-
-          const { error } = await getJerichoCloud().rpc(
-            "sync_jericho_record_replace",
-            {
-              p_store_name: cloudRecord.store_name,
-              p_local_id: cloudRecord.local_id,
-              p_device_id: cloudRecord.device_id,
-              p_data: cloudRecord.data,
-              p_updated_at: cloudRecord.updated_at || new Date().toISOString()
-            }
-          );
-
-          if (error) {
-            throw error;
-          }
-
-          uploaded += 1;
-        }
-      }
-
-      clearLocalChanges();
+    if (clearCookiesFirst) {
+      setSyncButtonState(true, "Clearing cookies...");
+      await clearBrowserDataForSync();
+    } else {
+      await dbReady;
     }
 
-    // Now clear local browser app data like clearing cookies/storage.
-    setSyncButtonState(true, "Clearing local data...");
-
-    for (const storeName of JERICHO_SYNC_STORES) {
-      await clearStore(storeName);
-    }
-
-    // Download fresh cloud data.
     setSyncButtonState(true, "Downloading fresh data...");
 
     const { data, error } = await getJerichoCloud()
@@ -520,11 +511,14 @@ async function syncNow(options = {}) {
     });
 
     for (const storeName of JERICHO_SYNC_STORES) {
+      await clearStore(storeName);
+
       const records = groupedRecords[storeName] || [];
       const uniqueMap = new Map();
 
       for (const record of records) {
         const key = getRecordIdentityKey(storeName, record);
+
         if (!key) continue;
 
         const existing = uniqueMap.get(key);
@@ -535,6 +529,7 @@ async function syncNow(options = {}) {
       }
 
       const cleanRecords = Array.from(uniqueMap.values());
+
       downloaded += cleanRecords.length;
 
       for (const record of cleanRecords) {
@@ -542,21 +537,15 @@ async function syncNow(options = {}) {
       }
     }
 
-    localStorage.setItem(JERICHO_LAST_SYNC_KEY, new Date().toISOString());
-
-    if (typeof refreshAll === "function") {
-      await refreshAll();
-    }
-
     setSyncButtonState(false, "Synced");
 
-    setTimeout(() => {
-      setSyncButtonState(false, "Sync Now");
-    }, 2500);
-
     if (!silent) {
-      alert(`Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}`);
+      alert(
+        `Fresh sync complete.\n\n\nLogin again.`
+      );
     }
+
+    window.location.reload();
   } catch (error) {
     console.error("SYNC STOPPED:", error);
 
@@ -678,7 +667,10 @@ async function continueSyncAfterHardRefresh() {
   sessionStorage.removeItem(JERICHO_SYNC_AFTER_RELOAD_KEY);
 
   setTimeout(async () => {
-    await syncNow({ silent: false, skipHardRefresh: true });
+    await syncNow({
+      silent: false,
+      clearCookiesFirst: true
+    });
   }, 1000);
 }
 document.addEventListener(
