@@ -43,7 +43,29 @@ const JERICHO_SYNC_STORES = [
 
 const JERICHO_DEVICE_ID_KEY = "jericho_device_id";
 const JERICHO_LAST_SYNC_KEY = "jericho_last_supabase_sync_at";
+const JERICHO_DELETED_KEYS = "jericho_deleted_record_keys";
 
+function getDeletedKeys() {
+  try {
+    return JSON.parse(localStorage.getItem(JERICHO_DELETED_KEYS) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveDeletedKey(key) {
+  if (!key) return;
+
+  const keys = new Set(getDeletedKeys());
+  keys.add(key);
+
+  localStorage.setItem(JERICHO_DELETED_KEYS, JSON.stringify([...keys]));
+}
+
+function isLocallyDeleted(storeName, record) {
+  const key = getRecordIdentityKey(storeName, record);
+  return key && getDeletedKeys().includes(key);
+}
 window.__jerichoSyncBusy = false;
 window.__jerichoSyncTimer = null;
 window.__jerichoAutoSyncReady = false;
@@ -267,7 +289,8 @@ async function pullRecordsFromSupabase(options = {}) {
 
     for (const storeName of JERICHO_SYNC_STORES) {
       const localRecords = await getAll(storeName);
-      const cloudRecords = groupedCloudRecords[storeName] || [];
+      const cloudRecords = (groupedCloudRecords[storeName] || [])
+        .filter(record => !isLocallyDeleted(storeName, record));
 
       downloadedCount += cloudRecords.length;
 
@@ -447,6 +470,7 @@ async function deleteEverywhere(storeName, id) {
   const localRecords = await getAll(storeName);
   const recordToDelete = localRecords.find(record => String(record.id) === String(id));
 
+  saveDeletedKey(getRecordIdentityKey(storeName, recordToDelete || { id }));
   const { error } = await getJerichoCloud().rpc(
     "delete_jericho_record_everywhere",
     {
