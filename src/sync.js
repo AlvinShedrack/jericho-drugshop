@@ -43,29 +43,7 @@ const JERICHO_SYNC_STORES = [
 
 const JERICHO_DEVICE_ID_KEY = "jericho_device_id";
 const JERICHO_LAST_SYNC_KEY = "jericho_last_supabase_sync_at";
-const JERICHO_DELETED_KEYS = "jericho_deleted_record_keys";
 
-function getDeletedKeys() {
-  try {
-    return JSON.parse(localStorage.getItem(JERICHO_DELETED_KEYS) || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function saveDeletedKey(key) {
-  if (!key) return;
-
-  const keys = new Set(getDeletedKeys());
-  keys.add(key);
-
-  localStorage.setItem(JERICHO_DELETED_KEYS, JSON.stringify([...keys]));
-}
-
-function isLocallyDeleted(storeName, record) {
-  const key = getRecordIdentityKey(storeName, record);
-  return key && getDeletedKeys().includes(key);
-}
 window.__jerichoSyncBusy = false;
 window.__jerichoSyncTimer = null;
 window.__jerichoAutoSyncReady = false;
@@ -110,17 +88,7 @@ function showSyncMessage(message) {
     showToast(message);
   }
 }
-function showSyncFailedInternetMessage(silent = false) {
-  const message = "Sync failed because of internet issues.";
 
-  setSyncButtonState(false, "Sync failed");
-
-  if (!silent) {
-    alert(message);
-  } else {
-    console.warn(message);
-  }
-}
 function showRealError(stage, error) {
   console.error(stage, error);
 
@@ -144,6 +112,10 @@ function getRecordTime(record) {
 
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function isDeletedRecord(record) {
+  return record?._deleted === true || String(record?._deleted).toLowerCase() === "true";
 }
 
 function getRecordIdentityKey(storeName, record) {
@@ -176,6 +148,20 @@ function getRecordIdentityKey(storeName, record) {
   return null;
 }
 
+async function removeMatchingLocalRecords(storeName, deletedRecord) {
+  const deletedKey = getRecordIdentityKey(storeName, deletedRecord);
+  const localRecords = await getAll(storeName);
+
+  for (const record of localRecords) {
+    const sameId = String(record.id) === String(deletedRecord.id);
+    const sameKey = deletedKey && getRecordIdentityKey(storeName, record) === deletedKey;
+
+    if (sameId || sameKey) {
+      await deleteRecord(storeName, record.id);
+    }
+  }
+}
+
 function normalizeRecordForCloud(record) {
   const now = new Date().toISOString();
 
@@ -197,52 +183,7 @@ function prepareRecordForCloud(storeName, record) {
     synced_at: new Date().toISOString()
   };
 }
-function isDeletedRecord(record) {
-  return record?._deleted === true || String(record?._deleted).toLowerCase() === "true";
-}
 
-async function deleteMatchingLocalRecords(storeName, deletedRecord) {
-  const deletedKey = getRecordIdentityKey(storeName, deletedRecord);
-  const localRecords = await getAll(storeName);
-
-  for (const record of localRecords) {
-    const sameId = String(record.id) === String(deletedRecord.id);
-    const sameKey = deletedKey && getRecordIdentityKey(storeName, record) === deletedKey;
-
-    if (sameId || sameKey) {
-      await deleteRecord(storeName, record.id);
-    }
-  }
-}
-function isDeletedRecord(record) {
-  return record?._deleted === true;
-}
-
-function makeDeletedRecord(record, id) {
-  const now = new Date().toISOString();
-
-  return {
-    ...(record || {}),
-    id: record?.id ?? Number(id),
-    _deleted: true,
-    deletedAt: now,
-    updatedAt: now
-  };
-}
-
-async function deleteMatchingLocalRecords(storeName, deletedRecord) {
-  const deletedKey = getRecordIdentityKey(storeName, deletedRecord);
-  const localRecords = await getAll(storeName);
-
-  for (const record of localRecords) {
-    const sameId = String(record.id) === String(deletedRecord.id);
-    const sameKey = deletedKey && getRecordIdentityKey(storeName, record) === deletedKey;
-
-    if (sameId || sameKey) {
-      await deleteRecord(storeName, record.id);
-    }
-  }
-}
 function recordFromCloud(row) {
   const cloudRecord = row.data || {};
 
@@ -261,6 +202,8 @@ function mergeRecords(storeName, localRecords, cloudRecords) {
   const merged = new Map();
 
   [...localRecords, ...cloudRecords].forEach(record => {
+    if (!record || isDeletedRecord(record)) return;
+
     const key = getRecordIdentityKey(storeName, record);
 
     if (!key) return;
@@ -280,14 +223,16 @@ function mergeRecords(storeName, localRecords, cloudRecords) {
     }
   });
 
-  return Array.from(merged.values());
+  return Array.from(merged.values()).filter(record => !isDeletedRecord(record));
 }
 
 async function replaceStoreRecords(storeName, records) {
   await clearStore(storeName);
 
   for (const record of records) {
-    await putRecord(storeName, record);
+    if (!isDeletedRecord(record)) {
+      await putRecord(storeName, record);
+    }
   }
 }
 
@@ -341,10 +286,10 @@ async function pullRecordsFromSupabase(options = {}) {
       const activeCloudRecords = cloudRecords.filter(record => !isDeletedRecord(record));
 
       for (const deletedRecord of deletedCloudRecords) {
-        await deleteMatchingLocalRecords(storeName, deletedRecord);
+        await removeMatchingLocalRecords(storeName, deletedRecord);
       }
 
-      const localRecords = await getAll(storeName);
+      const localRecords = (await getAll(storeName)).filter(record => !isDeletedRecord(record));
 
       const mergedRecords = mergeRecords(storeName, localRecords, activeCloudRecords)
         .filter(record => !isDeletedRecord(record));
@@ -360,8 +305,14 @@ async function pullRecordsFromSupabase(options = {}) {
 
     return downloadedCount;
   } catch (error) {
-    console.error("DOWNLOAD FROM SUPABASE", error);
-    showSyncFailedInternetMessage(silent);
+    setSyncButtonState(false, "Download failed");
+
+    if (!silent) {
+      showRealError("DOWNLOAD FROM SUPABASE", error);
+    } else {
+      console.error("DOWNLOAD FROM SUPABASE", error);
+    }
+
     throw error;
   }
 }
@@ -437,8 +388,14 @@ async function syncRecordsToSupabase(options = {}) {
 
     return uploadedCount;
   } catch (error) {
-    console.error("UPLOAD TO SUPABASE", error);
-    showSyncFailedInternetMessage(silent);
+    setSyncButtonState(false, "Upload failed");
+
+    if (!silent) {
+      showRealError("UPLOAD TO SUPABASE", error);
+    } else {
+      console.error("UPLOAD TO SUPABASE", error);
+    }
+
     throw error;
   }
 }
@@ -466,16 +423,17 @@ async function syncNow(options = {}) {
 
   let downloaded = 0;
   let uploaded = 0;
+  let finalDownloaded = 0;
 
   try {
     window.__jerichoSyncBusy = true;
 
     setSyncButtonState(true, "Syncing...");
     showSyncMessage("Sync started...");
+
     downloaded = await pullRecordsFromSupabase({ silent });
     uploaded = await syncRecordsToSupabase({ silent });
-    downloaded += await pullRecordsFromSupabase({ silent });
-
+    finalDownloaded = await pullRecordsFromSupabase({ silent });
 
     if (typeof refreshAll === "function") {
       await refreshAll();
@@ -488,11 +446,23 @@ async function syncNow(options = {}) {
     }, 2500);
 
     if (!silent) {
-      alert(`Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}`);
+      alert(
+        `Sync complete.\nDownloaded: ${downloaded + finalDownloaded}\nUploaded: ${uploaded}`
+      );
     }
   } catch (error) {
     console.error("SYNC STOPPED:", error);
-    showSyncFailedInternetMessage(silent);
+
+    setSyncButtonState(false, "Retry");
+
+    if (!silent) {
+      alert(
+        "Sync stopped.\n\n" +
+        "Downloaded before failure: " + downloaded + "\n" +
+        "Uploaded before failure: " + uploaded + "\n\n" +
+        "The detailed error should have appeared before this message."
+      );
+    }
   } finally {
     window.__jerichoSyncBusy = false;
   }
@@ -524,16 +494,21 @@ async function deleteEverywhere(storeName, id) {
 
   const localRecords = await getAll(storeName);
   const recordToDelete = localRecords.find(record => String(record.id) === String(id));
-  const deletedRecord = makeDeletedRecord(recordToDelete, id);
+
+  const deletedData = {
+    ...(recordToDelete || {}),
+    id,
+    _deleted: true,
+    deletedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
 
   const { error } = await getJerichoCloud().rpc(
-    "sync_jericho_record_replace",
+    "delete_jericho_record_everywhere",
     {
       p_store_name: storeName,
       p_local_id: String(id),
-      p_device_id: jerichoDeviceId,
-      p_data: deletedRecord,
-      p_updated_at: deletedRecord.updatedAt
+      p_data: deletedData
     }
   );
 
@@ -541,7 +516,48 @@ async function deleteEverywhere(storeName, id) {
     throw error;
   }
 
-  await deleteMatchingLocalRecords(storeName, deletedRecord);
+  await deleteRecord(storeName, id);
+
+  const stillThere = await getAll(storeName);
+
+  for (const record of stillThere) {
+    if (String(record.id) === String(id)) {
+      await deleteRecord(storeName, record.id);
+    }
+  }
+
+  const remainingRecords = await getAll(storeName);
+
+  for (const record of remainingRecords) {
+    if (storeName === "users") {
+      const deletedEmail = String(recordToDelete?.email || "").trim().toLowerCase();
+      const recordEmail = String(record?.email || "").trim().toLowerCase();
+
+      if (deletedEmail && recordEmail === deletedEmail) {
+        await deleteRecord(storeName, record.id);
+      }
+    }
+
+    if (storeName === "suppliers") {
+      const deletedName = String(
+        recordToDelete?.supplierName ||
+        recordToDelete?.companyName ||
+        recordToDelete?.name ||
+        ""
+      ).trim().toLowerCase();
+
+      const recordName = String(
+        record?.supplierName ||
+        record?.companyName ||
+        record?.name ||
+        ""
+      ).trim().toLowerCase();
+
+      if (deletedName && recordName === deletedName) {
+        await deleteRecord(storeName, record.id);
+      }
+    }
+  }
 
   if (typeof refreshAll === "function") {
     await refreshAll();
