@@ -890,7 +890,7 @@ async function addToCart() {
   const discount = Number(saleDiscountInput.value || 0);
 
   if (!medicineName || qty <= 0) {
-    return showToast("Select or type medicine and quantity.");
+    return showToast("Enter medicine name and quantity.");
   }
 
   const medicines = await getAll(STORE.medicines);
@@ -899,35 +899,50 @@ async function addToCart() {
     String(item.name || "").trim().toLowerCase() === medicineName.toLowerCase()
   );
 
-  if (!med) {
-    return showToast("Medicine not found in stock. Add it in Purchases or Inventory first.");
+  const saleType = $("saleType")?.value || "retail";
+
+  let effectivePrice = med ? Number(med.sellingPrice || 0) : 0;
+  let buyingPrice = med ? Number(med.buyingPrice || 0) : 0;
+
+  if (med && saleType === "wholesale") {
+    effectivePrice = med.wholesalePrice
+      ? Number(med.wholesalePrice)
+      : Math.round(effectivePrice * 0.9);
   }
 
-  const medicineId = Number(med.id);
-  if (daysUntil(med.expiryDate) < 0) return showToast("Cannot sell expired medicine.");
+  if (!med || effectivePrice <= 0) {
+    effectivePrice = Number(
+      prompt(`Enter selling price for ${medicineName}:`) || 0
+    );
 
-  const existingQty = cart.filter(item => item.medicineId === medicineId).reduce((sum, item) => sum + item.qty, 0);
-  if (existingQty + qty > Number(med.quantity)) return showToast("Insufficient stock.");
+    if (effectivePrice <= 0) {
+      return showToast("Selling price is required.");
+    }
+  }
 
-  const saleType = $("saleType")?.value || "retail";
-  let effectivePrice = Number(med.sellingPrice || 0);
-  if (saleType === "wholesale") {
-    effectivePrice = med.wholesalePrice ? Number(med.wholesalePrice) : Math.round(effectivePrice * 0.9);
+  if (!med) {
+    buyingPrice = Number(
+      prompt(`Enter buying price/cost for ${medicineName} (optional):`) || 0
+    );
   }
 
   cart.push({
-    medicineId,
-    name: med.name,
-    batchNo: med.batchNo,
+    medicineId: med ? med.id : null,
+    name: med ? med.name : medicineName,
+    batchNo: med ? med.batchNo : "Manual entry",
     qty,
     sellingPrice: effectivePrice,
-    buyingPrice: Number(med.buyingPrice || 0),
+    buyingPrice,
     discount: Math.max(0, discount),
-    saleType
+    saleType,
+    manualEntry: !med,
+    allowOutOfStock: true
   });
 
+  if (saleMedicineSelect) saleMedicineSelect.value = "";
   if (saleQtyInput) saleQtyInput.value = "";
   if (saleDiscountInput) saleDiscountInput.value = "";
+
   renderCart();
 }
 
@@ -1110,23 +1125,7 @@ async function completeSale() {
     ? originalSale.lines
     : [];
 
-  for (const item of cart) {
-    const med = await findLocalRecordById(STORE.medicines, item.medicineId);
 
-    if (!med) {
-      return showToast(`Medicine not found: ${item.name}`);
-    }
-
-    const originalQty = originalLines
-      .filter(line => String(line.medicineId) === String(item.medicineId))
-      .reduce((sum, line) => sum + Number(line.qty || 0), 0);
-
-    const availableQty = Number(med.quantity || 0) + originalQty;
-
-    if (Number(item.qty || 0) > availableQty) {
-      return showToast(`Insufficient stock for ${item.name}.`);
-    }
-  }
 
   const profit = cart.reduce((sum, item) => {
     const itemRevenue = Math.max(
