@@ -197,7 +197,35 @@ function prepareRecordForCloud(storeName, record) {
     synced_at: new Date().toISOString()
   };
 }
+function isDeletedRecord(record) {
+  return record?._deleted === true;
+}
 
+function makeDeletedRecord(record, id) {
+  const now = new Date().toISOString();
+
+  return {
+    ...(record || {}),
+    id: record?.id ?? Number(id),
+    _deleted: true,
+    deletedAt: now,
+    updatedAt: now
+  };
+}
+
+async function deleteMatchingLocalRecords(storeName, deletedRecord) {
+  const deletedKey = getRecordIdentityKey(storeName, deletedRecord);
+  const localRecords = await getAll(storeName);
+
+  for (const record of localRecords) {
+    const sameId = String(record.id) === String(deletedRecord.id);
+    const sameKey = deletedKey && getRecordIdentityKey(storeName, record) === deletedKey;
+
+    if (sameId || sameKey) {
+      await deleteRecord(storeName, record.id);
+    }
+  }
+}
 function recordFromCloud(row) {
   const cloudRecord = row.data || {};
 
@@ -288,13 +316,22 @@ async function pullRecordsFromSupabase(options = {}) {
     let downloadedCount = 0;
 
     for (const storeName of JERICHO_SYNC_STORES) {
-      const localRecords = await getAll(storeName);
-      const cloudRecords = (groupedCloudRecords[storeName] || [])
-        .filter(record => !isLocallyDeleted(storeName, record));
+      const cloudRecords = groupedCloudRecords[storeName] || [];
 
       downloadedCount += cloudRecords.length;
 
-      const mergedRecords = mergeRecords(storeName, localRecords, cloudRecords);
+      const deletedCloudRecords = cloudRecords.filter(isDeletedRecord);
+      const activeCloudRecords = cloudRecords.filter(record => !isDeletedRecord(record));
+
+      for (const deletedRecord of deletedCloudRecords) {
+        await deleteMatchingLocalRecords(storeName, deletedRecord);
+      }
+
+      const localRecords = await getAll(storeName);
+
+      const mergedRecords = mergeRecords(storeName, localRecords, activeCloudRecords)
+        .filter(record => !isDeletedRecord(record));
+
       await replaceStoreRecords(storeName, mergedRecords);
     }
 
@@ -418,8 +455,9 @@ async function syncNow(options = {}) {
 
     setSyncButtonState(true, "Syncing...");
     showSyncMessage("Sync started...");
-    uploaded = await syncRecordsToSupabase({ silent });
     downloaded = await pullRecordsFromSupabase({ silent });
+    uploaded = await syncRecordsToSupabase({ silent });
+    downloaded += await pullRecordsFromSupabase({ silent });
 
 
     if (typeof refreshAll === "function") {
@@ -469,14 +507,16 @@ async function deleteEverywhere(storeName, id) {
 
   const localRecords = await getAll(storeName);
   const recordToDelete = localRecords.find(record => String(record.id) === String(id));
+  const deletedRecord = makeDeletedRecord(recordToDelete, id);
 
-  saveDeletedKey(getRecordIdentityKey(storeName, recordToDelete || { id }));
   const { error } = await getJerichoCloud().rpc(
-    "delete_jericho_record_everywhere",
+    "sync_jericho_record_replace",
     {
       p_store_name: storeName,
       p_local_id: String(id),
-      p_data: recordToDelete || {}
+      p_device_id: jerichoDeviceId,
+      p_data: deletedRecord,
+      p_updated_at: deletedRecord.updatedAt
     }
   );
 
@@ -484,42 +524,7 @@ async function deleteEverywhere(storeName, id) {
     throw error;
   }
 
-  // Delete exact local record
-  await deleteRecord(storeName, id);
-
-  // Also remove local duplicates by email or supplier name
-  const remainingRecords = await getAll(storeName);
-
-  for (const record of remainingRecords) {
-    if (storeName === "users") {
-      const deletedEmail = String(recordToDelete?.email || "").trim().toLowerCase();
-      const recordEmail = String(record?.email || "").trim().toLowerCase();
-
-      if (deletedEmail && recordEmail === deletedEmail) {
-        await deleteRecord(storeName, record.id);
-      }
-    }
-
-    if (storeName === "suppliers") {
-      const deletedName = String(
-        recordToDelete?.supplierName ||
-        recordToDelete?.companyName ||
-        recordToDelete?.name ||
-        ""
-      ).trim().toLowerCase();
-
-      const recordName = String(
-        record?.supplierName ||
-        record?.companyName ||
-        record?.name ||
-        ""
-      ).trim().toLowerCase();
-
-      if (deletedName && recordName === deletedName) {
-        await deleteRecord(storeName, record.id);
-      }
-    }
-  }
+  await deleteMatchingLocalRecords(storeName, deletedRecord);
 
   if (typeof refreshAll === "function") {
     await refreshAll();
