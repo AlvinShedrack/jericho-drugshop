@@ -520,22 +520,36 @@ async function populateSupplierOptions() {
 async function populateMedicineOptions() {
   const medicines = await getAll(STORE.medicines);
   const canManagePricing = requireRole(["Administrator", "Director"]);
+
   const saleOptions = medicines
-    .filter(med => Number(med.quantity) > 0 && daysUntil(med.expiryDate) >= 0)
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(med => {
       const priceLabel = canManagePricing && med.wholesalePrice
         ? ` | Wholesale ${formatMoney(med.wholesalePrice)}`
         : "";
-      return `<option value="${med.id}">${escapeHtml(med.name)} | Qty ${med.quantity} | ${formatMoney(med.sellingPrice)}${priceLabel}</option>`;
-    }).join("");
 
+      return `<option value="${escapeHtml(med.name)}">${escapeHtml(med.name)} | Qty ${med.quantity} | ${formatMoney(med.sellingPrice)}${priceLabel}</option>`;
+    })
+    .join("");
+  if ($("saleMedicineList")) {
+    $("saleMedicineList").innerHTML = saleOptions;
+  }
+
+  if ($("saleMedicineSelect")) {
+    $("saleMedicineSelect").placeholder = "Select or type medicine";
+  }
   const purchaseOptions = medicines
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map(med => `<option value="${med.id}">${escapeHtml(med.name)} | Batch ${escapeHtml(med.batchNo)}</option>`).join("");
+    .map(med => `<option value="${escapeHtml(med.name)}"></option>`)
+    .join("");
 
-  if ($("saleMedicineSelect")) $("saleMedicineSelect").innerHTML = saleOptions || `<option value="">No sellable medicine available</option>`;
-  if ($("purchaseMedicineSelect")) $("purchaseMedicineSelect").innerHTML = purchaseOptions || `<option value="">Add medicine first</option>`;
+  if ($("purchaseMedicineList")) {
+    $("purchaseMedicineList").innerHTML = purchaseOptions;
+  }
+
+  if ($("purchaseMedicineSelect")) {
+    $("purchaseMedicineSelect").placeholder = "Select or type medicine";
+  }
 }
 
 async function openMedicineForm(id = null) {
@@ -770,14 +784,25 @@ async function addToCart() {
     return;
   }
 
-  const medicineId = Number(saleMedicineSelect.value);
+  const medicineName = saleMedicineSelect.value.trim();
   const qty = Number(saleQtyInput.value || 0);
   const discount = Number(saleDiscountInput.value || 0);
 
-  if (!medicineId || qty <= 0) return showToast("Select medicine and quantity.");
+  if (!medicineName || qty <= 0) {
+    return showToast("Select or type medicine and quantity.");
+  }
 
-  const med = await getById(STORE.medicines, medicineId);
-  if (!med) return showToast("Medicine not found.");
+  const medicines = await getAll(STORE.medicines);
+
+  const med = medicines.find(item =>
+    String(item.name || "").trim().toLowerCase() === medicineName.toLowerCase()
+  );
+
+  if (!med) {
+    return showToast("Medicine not found in stock. Add it in Purchases or Inventory first.");
+  }
+
+  const medicineId = Number(med.id);
   if (daysUntil(med.expiryDate) < 0) return showToast("Cannot sell expired medicine.");
 
   const existingQty = cart.filter(item => item.medicineId === medicineId).reduce((sum, item) => sum + item.qty, 0);
@@ -1191,23 +1216,27 @@ async function addPurchaseLine() {
     return showToast("Only Admin or Pharmacist can add purchases.");
   }
 
-  const medicineId = Number($("purchaseMedicineSelect").value);
+  const medicineName = $("purchaseMedicineSelect").value.trim();
   const batchNo = $("purchaseBatchNo").value.trim();
   const expiryDate = normalizeDateInput($("purchaseExpiryDate").value);
   const qty = Number($("purchaseQty").value || 0);
   const unitCost = Number($("purchaseCost").value || 0);
   const retailPrice = Number($("purchaseRetailPrice").value || 0);
 
-  if (!medicineId || !batchNo || !expiryDate || qty <= 0 || unitCost < 0 || retailPrice < 0) {
-    return showToast("Select medicine, batch number, expiry date, quantity, buying price, and retail price.");
+  if (!medicineName || !batchNo || !expiryDate || qty <= 0 || unitCost < 0 || retailPrice < 0) {
+    return showToast("Enter medicine, batch number, expiry date, quantity, buying price, and retail price.");
   }
 
-  const med = await getById(STORE.medicines, medicineId);
-  if (!med) return showToast("Medicine not found.");
+  const medicines = await getAll(STORE.medicines);
+
+  const existingMedicine = medicines.find(med =>
+    String(med.name || "").trim().toLowerCase() === medicineName.toLowerCase()
+  );
 
   purchaseLines.push({
-    medicineId,
-    name: med.name,
+    medicineId: existingMedicine ? existingMedicine.id : null,
+    name: existingMedicine ? existingMedicine.name : medicineName,
+    isNewMedicine: !existingMedicine,
     batchNo,
     expiryDate,
     qty,
@@ -1215,6 +1244,7 @@ async function addPurchaseLine() {
     retailPrice
   });
 
+  $("purchaseMedicineSelect").value = "";
   $("purchaseBatchNo").value = "";
   $("purchaseExpiryDate").value = "";
   $("purchaseQty").value = "";
@@ -1234,7 +1264,30 @@ async function completePurchase() {
   const total = purchaseLines.reduce((sum, item) => sum + (item.qty * item.unitCost), 0);
 
   for (const line of purchaseLines) {
-    const med = await getById(STORE.medicines, line.medicineId);
+    let med = line.medicineId ? await getById(STORE.medicines, line.medicineId) : null;
+
+    if (!med) {
+      const newMedicineId = await addRecord(STORE.medicines, {
+        name: line.name,
+        genericName: "",
+        category: "",
+        quantity: 0,
+        buyingPrice: Number(line.unitCost || 0),
+        sellingPrice: Number(line.retailPrice || 0),
+        wholesalePrice: 0,
+        reorderLevel: 5,
+        batchNo: line.batchNo,
+        expiryDate: line.expiryDate,
+        supplierId: supplierId || "",
+        notes: "Created from purchase entry",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      med = await getById(STORE.medicines, newMedicineId);
+      line.medicineId = newMedicineId;
+    }
+
     if (!med) continue;
 
     med.quantity = Number(med.quantity || 0) + Number(line.qty);

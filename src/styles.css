@@ -2764,3 +2764,105 @@ body.is-authenticated .floating-sync-btn {
     line-height: 1 !important;
   }
 }
+/* ================================
+   FIX PURCHASE FORM OVERLAP
+================================ */
+
+#purchases .sale-add-row {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px !important;
+  align-items: stretch;
+}
+
+#purchases #purchaseMedicineSelect {
+  grid-column: 1 / -1;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+#purchases .sale-add-row input,
+#purchases .sale-add-row select,
+#purchases .sale-add-row button {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+#purchases .sale-add-row button {
+  white-space: nowrap;
+}
+
+/* smaller laptop / tablet */
+@media (max-width: 1100px) {
+  #purchases .sale-add-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #purchases #purchaseMedicineSelect {
+    grid-column: 1 / -1;
+  }
+}
+
+/* mobile */
+@media (max-width: 760px) {
+  #purchases .sale-add-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  #purchases #purchaseMedicineSelect {
+    grid-column: auto;
+  }
+}
+
+
+/* ================================
+   FIX SALES MEDICINE INPUT WIDTH
+================================ */
+
+#sales .sale-add-row {
+  display: grid !important;
+  grid-template-columns: minmax(280px, 2fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) auto;
+  gap: 10px !important;
+  align-items: center;
+}
+
+#sales #saleMedicineSelect {
+  width: 100% !important;
+  min-width: 280px !important;
+  max-width: none !important;
+}
+
+#sales #saleQty,
+#sales #saleDiscount {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+#sales .sale-add-row button {
+  white-space: nowrap;
+}
+
+/* Smaller laptop / tablet */
+@media (max-width: 1000px) {
+  #sales .sale-add-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  #sales #saleMedicineSelect {
+    grid-column: 1 / -1;
+    min-width: 0 !important;
+  }
+
+  #sales .sale-add-row button {
+    width: 100%;
+  }
+}
+
+/* Mobile */
+@media (max-width: 760px) {
+  #sales .sale-add-row {
+    grid-template-columns: 1fr !important;
+  }
+}
