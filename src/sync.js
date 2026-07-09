@@ -1,3 +1,4 @@
+console.log("SYNC.JS LOADED OK");
 const JERICHO_SUPABASE_URL = "https://rorqfxjnupdnqzcozeut.supabase.co";
 const JERICHO_SUPABASE_PUBLIC_KEY = "sb_publishable_ZCCvcvPKoSDuY4JpRgwghw_Wt35MjBx";
 
@@ -20,7 +21,7 @@ const JERICHO_SYNC_STORES = [
 
 const JERICHO_DEVICE_ID_KEY = "jericho_device_id";
 const JERICHO_LAST_SYNC_KEY = "jericho_last_supabase_sync_at";
-const JERICHO_LOCAL_CHANGES_KEY = "jericho_has_local_changes_v3";
+
 const JERICHO_SYNC_AFTER_RELOAD_KEY = "jericho_sync_after_reload";
 const JERICHO_LOCAL_CHANGES_KEY = "jericho_has_local_changes_v4";
 
