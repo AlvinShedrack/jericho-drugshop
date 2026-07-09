@@ -43,6 +43,7 @@ const JERICHO_SYNC_STORES = [
 
 const JERICHO_DEVICE_ID_KEY = "jericho_device_id";
 const JERICHO_LAST_SYNC_KEY = "jericho_last_supabase_sync_at";
+const JERICHO_LOCAL_CHANGES_KEY = "jericho_has_local_changes";
 
 window.__jerichoSyncBusy = false;
 window.__jerichoSyncTimer = null;
@@ -61,7 +62,17 @@ function getJerichoDeviceId() {
 
   return deviceId;
 }
+function markLocalChanges() {
+  localStorage.setItem(JERICHO_LOCAL_CHANGES_KEY, "true");
+}
 
+function clearLocalChanges() {
+  localStorage.removeItem(JERICHO_LOCAL_CHANGES_KEY);
+}
+
+function hasLocalChanges() {
+  return localStorage.getItem(JERICHO_LOCAL_CHANGES_KEY) === "true";
+}
 const jerichoDeviceId = getJerichoDeviceId();
 
 function setSyncButtonState(isSyncing, text) {
@@ -497,12 +508,12 @@ async function syncNow(options = {}) {
     setSyncButtonState(true, "Syncing...");
     showSyncMessage("Sync started...");
 
-    if (silent) {
-      uploaded = await syncRecordsToSupabase({ silent: true });
-      downloaded = await pullRecordsFromSupabase({ silent: true });
-    } else {
-      downloaded = await freshDownloadFromCloud({ silent: false });
+    if (hasLocalChanges()) {
+      uploaded = await syncRecordsToSupabase({ silent });
+      clearLocalChanges();
     }
+
+    downloaded = await freshDownloadFromCloud({ silent });
 
     if (typeof refreshAll === "function") {
       await refreshAll();
@@ -516,7 +527,7 @@ async function syncNow(options = {}) {
 
     if (!silent) {
       alert(
-        `Fresh sync complete.\nDownloaded: ${downloaded}\nUploaded: ${uploaded}`
+        `Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}`
       );
     }
   } catch (error) {
@@ -534,7 +545,13 @@ async function syncNow(options = {}) {
     window.__jerichoSyncBusy = false;
   }
 }
-function queueAutoSync() {
+function queueAutoSync(options = {}) {
+  const markChange = options.markLocalChange !== false;
+
+  if (markChange) {
+    markLocalChanges();
+  }
+
   if (!navigator.onLine) {
     setSyncButtonState(false, "Offline");
     return;
@@ -649,7 +666,10 @@ function startAutoSync() {
 
   window.addEventListener("online", () => {
     setSyncButtonState(false, "Sync Now");
-    queueAutoSync();
+
+    setTimeout(async () => {
+      await syncNow({ silent: true });
+    }, 800);
   });
 
   window.addEventListener("offline", () => {
@@ -658,7 +678,10 @@ function startAutoSync() {
 
   if (navigator.onLine) {
     setSyncButtonState(false, "Sync Now");
-    queueAutoSync();
+
+    setTimeout(async () => {
+      await syncNow({ silent: true });
+    }, 800);
   } else {
     setSyncButtonState(false, "Offline");
   }
