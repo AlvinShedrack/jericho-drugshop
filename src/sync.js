@@ -6,29 +6,6 @@ if (!window.supabase) {
   throw new Error("Supabase library is not loaded.");
 }
 
-function getJerichoCloud() {
-  if (!window.supabase || typeof window.supabase.createClient !== "function") {
-    throw new Error("Supabase library is not loaded correctly.");
-  }
-
-  if (!JERICHO_SUPABASE_URL || JERICHO_SUPABASE_URL.includes("PASTE_")) {
-    throw new Error("Supabase URL is missing in sync.js.");
-  }
-
-  if (!JERICHO_SUPABASE_PUBLIC_KEY || JERICHO_SUPABASE_PUBLIC_KEY.includes("PASTE_")) {
-    throw new Error("Supabase public key is missing in sync.js.");
-  }
-
-  if (!window.cloudClient || typeof window.cloudClient.from !== "function") {
-    window.cloudClient = window.supabase.createClient(
-      JERICHO_SUPABASE_URL,
-      JERICHO_SUPABASE_PUBLIC_KEY
-    );
-  }
-
-  return window.cloudClient;
-}
-
 const JERICHO_SYNC_TABLE = "jericho_records";
 
 const JERICHO_SYNC_STORES = [
@@ -43,11 +20,27 @@ const JERICHO_SYNC_STORES = [
 
 const JERICHO_DEVICE_ID_KEY = "jericho_device_id";
 const JERICHO_LAST_SYNC_KEY = "jericho_last_supabase_sync_at";
-const JERICHO_LOCAL_CHANGES_KEY = "jericho_has_local_changes";
+const JERICHO_DIRTY_RECORDS_KEY = "jericho_dirty_records_v2";
 
 window.__jerichoSyncBusy = false;
 window.__jerichoSyncTimer = null;
 window.__jerichoAutoSyncReady = false;
+window.__jerichoApplyingRemote = false;
+
+function getJerichoCloud() {
+  if (!window.supabase || typeof window.supabase.createClient !== "function") {
+    throw new Error("Supabase library is not loaded correctly.");
+  }
+
+  if (!window.cloudClient || typeof window.cloudClient.from !== "function") {
+    window.cloudClient = window.supabase.createClient(
+      JERICHO_SUPABASE_URL,
+      JERICHO_SUPABASE_PUBLIC_KEY
+    );
+  }
+
+  return window.cloudClient;
+}
 
 function getJerichoDeviceId() {
   let deviceId = localStorage.getItem(JERICHO_DEVICE_ID_KEY);
@@ -62,17 +55,7 @@ function getJerichoDeviceId() {
 
   return deviceId;
 }
-function markLocalChanges() {
-  localStorage.setItem(JERICHO_LOCAL_CHANGES_KEY, "true");
-}
 
-function clearLocalChanges() {
-  localStorage.removeItem(JERICHO_LOCAL_CHANGES_KEY);
-}
-
-function hasLocalChanges() {
-  return localStorage.getItem(JERICHO_LOCAL_CHANGES_KEY) === "true";
-}
 const jerichoDeviceId = getJerichoDeviceId();
 
 function setSyncButtonState(isSyncing, text) {
@@ -103,22 +86,13 @@ function showSyncMessage(message) {
 function showRealError(stage, error) {
   console.error(stage, error);
 
-  const errorText =
+  alert(
     "STEP FAILED: " + stage + "\n\n" +
     "Message:\n" + (error?.message || "No message") + "\n\n" +
     "Code:\n" + (error?.code || "No code") + "\n\n" +
     "Details:\n" + (error?.details || "No details") + "\n\n" +
-    "Hint:\n" + (error?.hint || "No hint") + "\n\n" +
-    "Full Error:\n" + JSON.stringify(error, null, 2);
-
-  alert(errorText);
-}
-
-function getRecordTime(record) {
-  const value = record?.updatedAt || record?.createdAt || 0;
-  const time = new Date(value).getTime();
-
-  return Number.isNaN(time) ? 0 : time;
+    "Hint:\n" + (error?.hint || "No hint")
+  );
 }
 
 function normalizeText(value) {
@@ -129,15 +103,19 @@ function isDeletedRecord(record) {
   return record?._deleted === true || String(record?._deleted).toLowerCase() === "true";
 }
 
+function getRecordTime(record) {
+  const value = record?.updatedAt || record?.createdAt || 0;
+  const time = new Date(value).getTime();
+
+  return Number.isNaN(time) ? 0 : time;
+}
+
 function getRecordIdentityKey(storeName, record) {
   if (!record) return null;
 
   if (storeName === "users") {
     const email = normalizeText(record.email);
-
-    if (email) {
-      return "users:email:" + email;
-    }
+    if (email) return "users:email:" + email;
   }
 
   if (storeName === "suppliers") {
@@ -147,9 +125,7 @@ function getRecordIdentityKey(storeName, record) {
       record.name
     );
 
-    if (supplierName) {
-      return "suppliers:name:" + supplierName;
-    }
+    if (supplierName) return "suppliers:name:" + supplierName;
   }
 
   if (record.id !== undefined && record.id !== null) {
@@ -159,18 +135,61 @@ function getRecordIdentityKey(storeName, record) {
   return null;
 }
 
-async function removeMatchingLocalRecords(storeName, deletedRecord) {
-  const deletedKey = getRecordIdentityKey(storeName, deletedRecord);
-  const localRecords = await getAll(storeName);
-
-  for (const record of localRecords) {
-    const sameId = String(record.id) === String(deletedRecord.id);
-    const sameKey = deletedKey && getRecordIdentityKey(storeName, record) === deletedKey;
-
-    if (sameId || sameKey) {
-      await deleteRecord(storeName, record.id);
-    }
+function getDirtyMap() {
+  try {
+    return JSON.parse(localStorage.getItem(JERICHO_DIRTY_RECORDS_KEY) || "{}");
+  } catch (error) {
+    return {};
   }
+}
+
+function saveDirtyMap(map) {
+  localStorage.setItem(JERICHO_DIRTY_RECORDS_KEY, JSON.stringify(map));
+}
+
+function clearDirtyMap() {
+  localStorage.removeItem(JERICHO_DIRTY_RECORDS_KEY);
+}
+
+function markDirtyRecord(storeName, record, deleted = false) {
+  if (window.__jerichoApplyingRemote) return;
+  if (!storeName || !record) return;
+
+  const id = record.id;
+
+  if (id === undefined || id === null || id === "") return;
+
+  const now = new Date().toISOString();
+
+  const dirtyRecord = {
+    ...record,
+    id,
+    _deleted: deleted ? true : record._deleted,
+    deletedAt: deleted ? (record.deletedAt || now) : record.deletedAt,
+    updatedAt: now
+  };
+
+  const key = `${storeName}:${String(id)}`;
+  const dirtyMap = getDirtyMap();
+
+  dirtyMap[key] = {
+    storeName,
+    id,
+    deleted,
+    record: dirtyRecord
+  };
+
+  saveDirtyMap(dirtyMap);
+}
+
+function removeDirtyRecord(storeName, id) {
+  const dirtyMap = getDirtyMap();
+  delete dirtyMap[`${storeName}:${String(id)}`];
+  saveDirtyMap(dirtyMap);
+}
+
+function getDirtyEntries() {
+  return Object.values(getDirtyMap());
 }
 
 function normalizeRecordForCloud(record) {
@@ -216,7 +235,6 @@ function mergeRecords(storeName, localRecords, cloudRecords) {
     if (!record || isDeletedRecord(record)) return;
 
     const key = getRecordIdentityKey(storeName, record);
-
     if (!key) return;
 
     const existing = merged.get(key);
@@ -226,10 +244,7 @@ function mergeRecords(storeName, localRecords, cloudRecords) {
       return;
     }
 
-    const existingTime = getRecordTime(existing);
-    const recordTime = getRecordTime(record);
-
-    if (recordTime >= existingTime) {
+    if (getRecordTime(record) >= getRecordTime(existing)) {
       merged.set(key, record);
     }
   });
@@ -238,16 +253,186 @@ function mergeRecords(storeName, localRecords, cloudRecords) {
 }
 
 async function replaceStoreRecords(storeName, records) {
-  await clearStore(storeName);
+  window.__jerichoApplyingRemote = true;
 
-  for (const record of records) {
-    if (!isDeletedRecord(record)) {
-      await putRecord(storeName, record);
+  try {
+    await clearStore(storeName);
+
+    for (const record of records) {
+      if (!isDeletedRecord(record)) {
+        await putRecord(storeName, record);
+      }
     }
+  } finally {
+    window.__jerichoApplyingRemote = false;
   }
 }
 
-async function pullRecordsFromSupabase(options = {}) {
+function patchLocalWriteTracking() {
+  if (window.__jerichoWriteTrackingPatched) return;
+
+  if (
+    typeof window.addRecord !== "function" ||
+    typeof window.putRecord !== "function" ||
+    typeof window.deleteRecord !== "function"
+  ) {
+    console.warn("Write tracking not patched because db.js functions are missing.");
+    return;
+  }
+
+  const originalAddRecord = window.addRecord;
+  const originalPutRecord = window.putRecord;
+  const originalDeleteRecord = window.deleteRecord;
+
+  window.addRecord = async function patchedAddRecord(storeName, record) {
+    if (!window.__jerichoApplyingRemote && record && typeof record === "object") {
+      record.updatedAt = new Date().toISOString();
+    }
+
+    const newId = await originalAddRecord.call(this, storeName, record);
+
+    if (!window.__jerichoApplyingRemote) {
+      markDirtyRecord(storeName, { ...(record || {}), id: newId }, false);
+    }
+
+    return newId;
+  };
+
+  window.putRecord = async function patchedPutRecord(storeName, record) {
+    if (!window.__jerichoApplyingRemote && record && typeof record === "object") {
+      record.updatedAt = new Date().toISOString();
+    }
+
+    const result = await originalPutRecord.call(this, storeName, record);
+
+    if (!window.__jerichoApplyingRemote) {
+      markDirtyRecord(storeName, record, isDeletedRecord(record));
+    }
+
+    return result;
+  };
+
+  window.deleteRecord = async function patchedDeleteRecord(storeName, id) {
+    let existingRecord = null;
+
+    if (!window.__jerichoApplyingRemote && typeof getById === "function") {
+      try {
+        existingRecord = await getById(storeName, id);
+      } catch (error) {
+        existingRecord = null;
+      }
+    }
+
+    const result = await originalDeleteRecord.call(this, storeName, id);
+
+    if (!window.__jerichoApplyingRemote) {
+      markDirtyRecord(
+        storeName,
+        {
+          ...(existingRecord || {}),
+          id,
+          _deleted: true,
+          deletedAt: new Date().toISOString()
+        },
+        true
+      );
+    }
+
+    return result;
+  };
+
+  window.__jerichoWriteTrackingPatched = true;
+}
+
+async function uploadOneRecord(storeName, record) {
+  const cloudRecord = prepareRecordForCloud(storeName, record);
+
+  const { error } = await getJerichoCloud().rpc(
+    "sync_jericho_record_replace",
+    {
+      p_store_name: cloudRecord.store_name,
+      p_local_id: cloudRecord.local_id,
+      p_device_id: cloudRecord.device_id,
+      p_data: cloudRecord.data,
+      p_updated_at: cloudRecord.updated_at || new Date().toISOString()
+    }
+  );
+
+  if (error) throw error;
+
+  return cloudRecord;
+}
+
+async function syncRecordsToSupabase(options = {}) {
+  const silent = options.silent === true;
+
+  if (!navigator.onLine) {
+    setSyncButtonState(false, "Offline");
+
+    if (!silent) {
+      alert("You are offline. Records will sync when internet is available.");
+    }
+
+    return 0;
+  }
+
+  try {
+    await dbReady;
+    patchLocalWriteTracking();
+
+    setSyncButtonState(true, "Uploading...");
+
+    const dirtyEntries = getDirtyEntries();
+
+    if (!dirtyEntries.length) {
+      setSyncButtonState(false, "No local changes");
+      return 0;
+    }
+
+    let uploadedCount = 0;
+
+    for (const entry of dirtyEntries) {
+      const storeName = entry.storeName;
+      const id = entry.id;
+
+      let record = null;
+
+      if (!entry.deleted) {
+        record = await getById(storeName, id);
+      }
+
+      if (!record) {
+        record = {
+          ...(entry.record || {}),
+          id,
+          _deleted: true,
+          deletedAt: entry.record?.deletedAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+      }
+
+      await uploadOneRecord(storeName, record);
+      removeDirtyRecord(storeName, id);
+      uploadedCount += 1;
+    }
+
+    localStorage.setItem(JERICHO_LAST_SYNC_KEY, new Date().toISOString());
+
+    return uploadedCount;
+  } catch (error) {
+    setSyncButtonState(false, "Upload failed");
+
+    if (!silent) {
+      showRealError("UPLOAD TO SUPABASE", error);
+    } else {
+      console.error("UPLOAD TO SUPABASE", error);
+    }
+
+    throw error;
+  }
+}
+
+async function freshDownloadFromCloud(options = {}) {
   const silent = options.silent === true;
 
   if (!navigator.onLine) {
@@ -262,8 +447,9 @@ async function pullRecordsFromSupabase(options = {}) {
 
   try {
     await dbReady;
+    patchLocalWriteTracking();
 
-    setSyncButtonState(true, "Downloading...");
+    setSyncButtonState(true, "Fresh downloading...");
 
     const { data, error } = await getJerichoCloud()
       .from(JERICHO_SYNC_TABLE)
@@ -271,9 +457,7 @@ async function pullRecordsFromSupabase(options = {}) {
       .in("store_name", JERICHO_SYNC_STORES)
       .order("updated_at", { ascending: false });
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
 
     const groupedCloudRecords = {};
 
@@ -283,29 +467,23 @@ async function pullRecordsFromSupabase(options = {}) {
 
     (data || []).forEach(row => {
       if (!groupedCloudRecords[row.store_name]) return;
-      groupedCloudRecords[row.store_name].push(recordFromCloud(row));
+
+      const record = recordFromCloud(row);
+
+      if (isDeletedRecord(record)) return;
+
+      groupedCloudRecords[row.store_name].push(record);
     });
 
     let downloadedCount = 0;
 
     for (const storeName of JERICHO_SYNC_STORES) {
       const cloudRecords = groupedCloudRecords[storeName] || [];
+      const cleanRecords = mergeRecords(storeName, [], cloudRecords);
 
-      downloadedCount += cloudRecords.length;
+      downloadedCount += cleanRecords.length;
 
-      const deletedCloudRecords = cloudRecords.filter(isDeletedRecord);
-      const activeCloudRecords = cloudRecords.filter(record => !isDeletedRecord(record));
-
-      for (const deletedRecord of deletedCloudRecords) {
-        await removeMatchingLocalRecords(storeName, deletedRecord);
-      }
-
-      const localRecords = (await getAll(storeName)).filter(record => !isDeletedRecord(record));
-
-      const mergedRecords = mergeRecords(storeName, localRecords, activeCloudRecords)
-        .filter(record => !isDeletedRecord(record));
-
-      await replaceStoreRecords(storeName, mergedRecords);
+      await replaceStoreRecords(storeName, cleanRecords);
     }
 
     localStorage.setItem(JERICHO_LAST_SYNC_KEY, new Date().toISOString());
@@ -328,156 +506,10 @@ async function pullRecordsFromSupabase(options = {}) {
   }
 }
 
-async function syncRecordsToSupabase(options = {}) {
-  const silent = options.silent === true;
-
-  if (!navigator.onLine) {
-    setSyncButtonState(false, "Offline");
-
-    if (!silent) {
-      alert("You are offline. Records will sync when internet is available.");
-    }
-
-    return 0;
-  }
-
-  try {
-    await dbReady;
-
-    setSyncButtonState(true, "Uploading...");
-
-    const payload = [];
-
-    for (const storeName of JERICHO_SYNC_STORES) {
-      const localRecords = await getAll(storeName);
-
-      localRecords.forEach(record => {
-        if (record.id === undefined || record.id === null) return;
-        payload.push(prepareRecordForCloud(storeName, record));
-      });
-    }
-
-    console.log("UPLOAD PAYLOAD COUNT:", payload.length);
-    console.log("UPLOAD PAYLOAD SAMPLE:", payload.slice(0, 3));
-
-    if (!payload.length) {
-      setSyncButtonState(false, "No records");
-
-      if (!silent) {
-        alert("There are no records to sync.");
-      }
-
-      return 0;
-    }
-
-    let uploadedCount = 0;
-
-    for (const record of payload) {
-      const { data, error } = await getJerichoCloud().rpc(
-        "sync_jericho_record_replace",
-        {
-          p_store_name: record.store_name,
-          p_local_id: record.local_id,
-          p_device_id: record.device_id,
-          p_data: record.data,
-          p_updated_at: record.updated_at || new Date().toISOString()
-        }
-      );
-
-      if (error) {
-        console.error("UPLOAD FAILED RECORD:", record);
-        throw error;
-      }
-
-      uploadedCount += 1;
-      console.log("UPLOAD SUCCESS RECORD:", data);
-    }
-
-    console.log("UPLOAD SUCCESS COUNT:", uploadedCount);
-
-    localStorage.setItem(JERICHO_LAST_SYNC_KEY, new Date().toISOString());
-
-    return uploadedCount;
-  } catch (error) {
-    setSyncButtonState(false, "Upload failed");
-
-    if (!silent) {
-      showRealError("UPLOAD TO SUPABASE", error);
-    } else {
-      console.error("UPLOAD TO SUPABASE", error);
-    }
-
-    throw error;
-  }
+async function pullRecordsFromSupabase(options = {}) {
+  return freshDownloadFromCloud(options);
 }
-async function freshDownloadFromCloud(options = {}) {
-  const silent = options.silent === true;
 
-  if (!navigator.onLine) {
-    setSyncButtonState(false, "Offline");
-
-    if (!silent) {
-      alert("You are offline. Connect to internet first.");
-    }
-
-    return 0;
-  }
-
-  await dbReady;
-
-  setSyncButtonState(true, "Fresh downloading...");
-
-  const { data, error } = await getJerichoCloud()
-    .from(JERICHO_SYNC_TABLE)
-    .select("*")
-    .in("store_name", JERICHO_SYNC_STORES)
-    .order("updated_at", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  const groupedCloudRecords = {};
-
-  JERICHO_SYNC_STORES.forEach(storeName => {
-    groupedCloudRecords[storeName] = [];
-  });
-
-  (data || []).forEach(row => {
-    if (!groupedCloudRecords[row.store_name]) return;
-
-    const record = recordFromCloud(row);
-
-    if (
-      record?._deleted === true ||
-      String(record?._deleted).toLowerCase() === "true"
-    ) {
-      return;
-    }
-
-    groupedCloudRecords[row.store_name].push(record);
-  });
-
-  let downloadedCount = 0;
-
-  for (const storeName of JERICHO_SYNC_STORES) {
-    const cloudRecords = groupedCloudRecords[storeName] || [];
-
-    downloadedCount += cloudRecords.length;
-
-    const uniqueRecords = mergeRecords(storeName, [], cloudRecords);
-
-    await replaceStoreRecords(storeName, uniqueRecords);
-  }
-
-  localStorage.setItem(JERICHO_LAST_SYNC_KEY, new Date().toISOString());
-
-  if (typeof refreshAll === "function") {
-    await refreshAll();
-  }
-
-  return downloadedCount;
-}
 async function syncNow(options = {}) {
   const silent = options.silent === true;
 
@@ -499,8 +531,8 @@ async function syncNow(options = {}) {
     return;
   }
 
-  let downloaded = 0;
   let uploaded = 0;
+  let downloaded = 0;
 
   try {
     window.__jerichoSyncBusy = true;
@@ -508,11 +540,7 @@ async function syncNow(options = {}) {
     setSyncButtonState(true, "Syncing...");
     showSyncMessage("Sync started...");
 
-    if (hasLocalChanges()) {
-      uploaded = await syncRecordsToSupabase({ silent });
-      clearLocalChanges();
-    }
-
+    uploaded = await syncRecordsToSupabase({ silent });
     downloaded = await freshDownloadFromCloud({ silent });
 
     if (typeof refreshAll === "function") {
@@ -526,9 +554,7 @@ async function syncNow(options = {}) {
     }, 2500);
 
     if (!silent) {
-      alert(
-        `Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}`
-      );
+      alert(`Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}`);
     }
   } catch (error) {
     console.error("SYNC STOPPED:", error);
@@ -536,21 +562,15 @@ async function syncNow(options = {}) {
     setSyncButtonState(false, "Retry");
 
     if (!silent) {
-      alert(
-        "Sync stopped.\n\n" +
-        "Message: " + (error?.message || "Unknown sync error")
-      );
+      alert("Sync stopped.\n\nMessage: " + (error?.message || "Unknown sync error"));
     }
   } finally {
     window.__jerichoSyncBusy = false;
   }
 }
-function queueAutoSync(options = {}) {
-  const markChange = options.markLocalChange !== false;
 
-  if (markChange) {
-    markLocalChanges();
-  }
+function queueAutoSync() {
+  patchLocalWriteTracking();
 
   if (!navigator.onLine) {
     setSyncButtonState(false, "Offline");
@@ -574,11 +594,12 @@ async function deleteEverywhere(storeName, id) {
   }
 
   await dbReady;
+  patchLocalWriteTracking();
 
   const localRecords = await getAll(storeName);
   const recordToDelete = localRecords.find(record => String(record.id) === String(id));
 
-  const deletedData = {
+  const deletedRecord = {
     ...(recordToDelete || {}),
     id,
     _deleted: true,
@@ -586,61 +607,25 @@ async function deleteEverywhere(storeName, id) {
     updatedAt: new Date().toISOString()
   };
 
-  const { error } = await getJerichoCloud().rpc(
-    "delete_jericho_record_everywhere",
-    {
-      p_store_name: storeName,
-      p_local_id: String(id),
-      p_data: deletedData
-    }
-  );
+  await uploadOneRecord(storeName, deletedRecord);
 
-  if (error) {
-    throw error;
-  }
+  window.__jerichoApplyingRemote = true;
 
-  await deleteRecord(storeName, id);
+  try {
+    await deleteRecord(storeName, id);
 
-  const stillThere = await getAll(storeName);
+    const remainingRecords = await getAll(storeName);
 
-  for (const record of stillThere) {
-    if (String(record.id) === String(id)) {
-      await deleteRecord(storeName, record.id);
-    }
-  }
-
-  const remainingRecords = await getAll(storeName);
-
-  for (const record of remainingRecords) {
-    if (storeName === "users") {
-      const deletedEmail = String(recordToDelete?.email || "").trim().toLowerCase();
-      const recordEmail = String(record?.email || "").trim().toLowerCase();
-
-      if (deletedEmail && recordEmail === deletedEmail) {
+    for (const record of remainingRecords) {
+      if (String(record.id) === String(id)) {
         await deleteRecord(storeName, record.id);
       }
     }
-
-    if (storeName === "suppliers") {
-      const deletedName = String(
-        recordToDelete?.supplierName ||
-        recordToDelete?.companyName ||
-        recordToDelete?.name ||
-        ""
-      ).trim().toLowerCase();
-
-      const recordName = String(
-        record?.supplierName ||
-        record?.companyName ||
-        record?.name ||
-        ""
-      ).trim().toLowerCase();
-
-      if (deletedName && recordName === deletedName) {
-        await deleteRecord(storeName, record.id);
-      }
-    }
+  } finally {
+    window.__jerichoApplyingRemote = false;
   }
+
+  removeDirtyRecord(storeName, id);
 
   if (typeof refreshAll === "function") {
     await refreshAll();
@@ -657,6 +642,7 @@ function bindSyncButtons() {
 
 function startAutoSync() {
   bindSyncButtons();
+  patchLocalWriteTracking();
 
   if (window.__jerichoAutoSyncReady === true) {
     return;
@@ -678,10 +664,6 @@ function startAutoSync() {
 
   if (navigator.onLine) {
     setSyncButtonState(false, "Sync Now");
-
-    setTimeout(async () => {
-      await syncNow({ silent: true });
-    }, 800);
   } else {
     setSyncButtonState(false, "Offline");
   }
@@ -697,8 +679,6 @@ document.addEventListener(
     event.preventDefault();
     event.stopImmediatePropagation();
 
-    console.log("Sync button clicked.");
-
     await syncNow({ silent: false });
   },
   true
@@ -706,6 +686,7 @@ document.addEventListener(
 
 document.addEventListener("DOMContentLoaded", () => {
   bindSyncButtons();
+  patchLocalWriteTracking();
   setSyncButtonState(false, navigator.onLine ? "Sync Now" : "Offline");
 });
 
