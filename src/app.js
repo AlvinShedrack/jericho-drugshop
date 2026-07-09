@@ -628,18 +628,45 @@ async function saveMedicine(event) {
     queueAutoSync();
   }
 }
+function normalizeRecordId(id) {
+  const value = String(id ?? "").trim();
 
+  if (value !== "" && /^-?\d+$/.test(value)) {
+    return Number(value);
+  }
+
+  return value;
+}
+
+async function findLocalRecordById(storeName, id) {
+  const normalizedId = normalizeRecordId(id);
+
+  let record = await getById(storeName, normalizedId);
+
+  if (record) {
+    return record;
+  }
+
+  const records = await getAll(storeName);
+
+  return records.find(item => String(item.id) === String(id)) || null;
+}
 async function deleteMedicine(id) {
-  if (!requireRole(["Administrator", "Director"])) return showToast("Not allowed.");
+  if (!requireRole(["Administrator", "Director"])) {
+    return showToast("Not allowed.");
+  }
 
-  const med = await getById(STORE.medicines, id);
-  if (!med) return;
+  const med = await findLocalRecordById(STORE.medicines, id);
+
+  if (!med) {
+    return showToast("Medicine not found. Refresh and try again.");
+  }
 
   if (!confirm(`Delete ${med.name}?`)) return;
 
   try {
-    await deleteEverywhere(STORE.medicines, id);
-    await writeAudit("medicine_deleted", { id, name: med.name });
+    await deleteEverywhere(STORE.medicines, med.id);
+    await writeAudit("medicine_deleted", { id: med.id, name: med.name });
 
     showToast("Medicine deleted.");
     await refreshAll();
@@ -918,9 +945,10 @@ async function deleteSale(id) {
     return showToast("Only Administrator or Director can delete sales.");
   }
 
-  const sale = await getById(STORE.sales, id);
+  const sale = await findLocalRecordById(STORE.sales, id);
+
   if (!sale) {
-    return showToast("Sale not found.");
+    return showToast("Sale not found. Refresh and try again.");
   }
 
   if (!confirm(`Delete sale ${sale.receiptNo}? This will return the sold stock back to inventory.`)) {
@@ -930,7 +958,7 @@ async function deleteSale(id) {
   try {
     if (Array.isArray(sale.lines)) {
       for (const item of sale.lines) {
-        const med = await getById(STORE.medicines, item.medicineId);
+        const med = await findLocalRecordById(STORE.medicines, item.medicineId);
         if (!med) continue;
 
         med.quantity = Number(med.quantity || 0) + Number(item.qty || 0);
@@ -940,15 +968,15 @@ async function deleteSale(id) {
       }
     }
 
-    await deleteEverywhere(STORE.sales, id);
+    await deleteEverywhere(STORE.sales, sale.id);
 
     await writeAudit("sale_deleted", {
-      id,
+      id: sale.id,
       receiptNo: sale.receiptNo,
       total: sale.total
     });
 
-    if (Number(editingSaleId) === Number(id)) {
+    if (String(editingSaleId) === String(sale.id)) {
       cart = [];
       resetSaleEditState();
       renderCart();
