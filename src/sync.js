@@ -648,7 +648,7 @@ async function syncNow(options = {}) {
 
     if (!silent) {
       alert(
-        `Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}\n\nThe app will reload. Log in again.`
+        `Sync complete.\n\nThe app will reload. Log in again.`
       );
     }
 
@@ -669,7 +669,7 @@ async function syncNow(options = {}) {
 function queueAutoSync() {
   patchLocalWriteTracking();
   markLocalChanges();
-  setSyncButtonState(false, "Unsynced changes");
+  setSyncButtonState(false, "Sync");
 }
 
 function scheduleAutoSync() {
@@ -702,7 +702,7 @@ async function deleteEverywhere(storeName, id) {
   }
 
   markLocalChanges();
-  setSyncButtonState(false, "Unsynced changes");
+  setSyncButtonState(false, "Sync");
 
   if (typeof refreshAll === "function") {
     await refreshAll();
@@ -728,14 +728,14 @@ function startAutoSync() {
   window.__jerichoAutoSyncReady = true;
 
   window.addEventListener("online", () => {
-    setSyncButtonState(false, hasLocalChanges() ? "Unsynced changes" : "Sync Now");
+    setSyncButtonState(false, hasLocalChanges() ? "Sync" : "Sync Now");
   });
 
   window.addEventListener("offline", () => {
     setSyncButtonState(false, "Offline");
   });
 
-  setSyncButtonState(false, navigator.onLine ? (hasLocalChanges() ? "Unsynced changes" : "Sync Now") : "Offline");
+  setSyncButtonState(false, navigator.onLine ? (hasLocalChanges() ? "Sync" : "Sync Now") : "Offline");
 }
 
 document.addEventListener(
@@ -756,7 +756,7 @@ document.addEventListener(
 document.addEventListener("DOMContentLoaded", () => {
   bindSyncButtons();
   patchLocalWriteTracking();
-  setSyncButtonState(false, navigator.onLine ? (hasLocalChanges() ? "Unsynced changes" : "Sync Now") : "Offline");
+  setSyncButtonState(false, navigator.onLine ? (hasLocalChanges() ? "Sync" : "Sync Now") : "Offline");
 });
 
 window.pullRecordsFromSupabase = pullRecordsFromSupabase;
