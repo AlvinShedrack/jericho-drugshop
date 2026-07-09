@@ -88,7 +88,17 @@ function showSyncMessage(message) {
     showToast(message);
   }
 }
+function showSyncFailedInternetMessage(silent = false) {
+  const message = "Sync failed because of internet issues.";
 
+  setSyncButtonState(false, "Sync failed");
+
+  if (!silent) {
+    alert(message);
+  } else {
+    console.warn(message);
+  }
+}
 function showRealError(stage, error) {
   console.error(stage, error);
 
@@ -273,14 +283,8 @@ async function pullRecordsFromSupabase(options = {}) {
 
     return downloadedCount;
   } catch (error) {
-    setSyncButtonState(false, "Download failed");
-
-    if (!silent) {
-      showRealError("DOWNLOAD FROM SUPABASE", error);
-    } else {
-      console.error("DOWNLOAD FROM SUPABASE", error);
-    }
-
+    console.error("DOWNLOAD FROM SUPABASE", error);
+    showSyncFailedInternetMessage(silent);
     throw error;
   }
 }
@@ -356,14 +360,8 @@ async function syncRecordsToSupabase(options = {}) {
 
     return uploadedCount;
   } catch (error) {
-    setSyncButtonState(false, "Upload failed");
-
-    if (!silent) {
-      showRealError("UPLOAD TO SUPABASE", error);
-    } else {
-      console.error("UPLOAD TO SUPABASE", error);
-    }
-
+    console.error("UPLOAD TO SUPABASE", error);
+    showSyncFailedInternetMessage(silent);
     throw error;
   }
 }
@@ -397,9 +395,9 @@ async function syncNow(options = {}) {
 
     setSyncButtonState(true, "Syncing...");
     showSyncMessage("Sync started...");
+    uploaded = await syncRecordsToSupabase({ silent });
+    downloaded = await pullRecordsFromSupabase({ silent });
 
-    downloaded = await pullRecordsFromSupabase({ silent: false });
-    uploaded = await syncRecordsToSupabase({ silent: false });
 
     if (typeof refreshAll === "function") {
       await refreshAll();
@@ -412,21 +410,11 @@ async function syncNow(options = {}) {
     }, 2500);
 
     if (!silent) {
-      alert(`Sync complete.\nDownloaded: ${downloaded}\nUploaded: ${uploaded}`);
+      alert(`Sync complete.\nUploaded: ${uploaded}\nDownloaded: ${downloaded}`);
     }
   } catch (error) {
     console.error("SYNC STOPPED:", error);
-
-    setSyncButtonState(false, "Retry");
-
-    if (!silent) {
-      alert(
-        "Sync stopped.\n\n" +
-        "Downloaded before failure: " + downloaded + "\n" +
-        "Uploaded before failure: " + uploaded + "\n\n" +
-        "The detailed error should have appeared before this message."
-      );
-    }
+    showSyncFailedInternetMessage(silent);
   } finally {
     window.__jerichoSyncBusy = false;
   }
