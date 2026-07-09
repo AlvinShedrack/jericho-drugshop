@@ -399,7 +399,74 @@ async function syncRecordsToSupabase(options = {}) {
     throw error;
   }
 }
+async function freshDownloadFromCloud(options = {}) {
+  const silent = options.silent === true;
 
+  if (!navigator.onLine) {
+    setSyncButtonState(false, "Offline");
+
+    if (!silent) {
+      alert("You are offline. Connect to internet first.");
+    }
+
+    return 0;
+  }
+
+  await dbReady;
+
+  setSyncButtonState(true, "Fresh downloading...");
+
+  const { data, error } = await getJerichoCloud()
+    .from(JERICHO_SYNC_TABLE)
+    .select("*")
+    .in("store_name", JERICHO_SYNC_STORES)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const groupedCloudRecords = {};
+
+  JERICHO_SYNC_STORES.forEach(storeName => {
+    groupedCloudRecords[storeName] = [];
+  });
+
+  (data || []).forEach(row => {
+    if (!groupedCloudRecords[row.store_name]) return;
+
+    const record = recordFromCloud(row);
+
+    if (
+      record?._deleted === true ||
+      String(record?._deleted).toLowerCase() === "true"
+    ) {
+      return;
+    }
+
+    groupedCloudRecords[row.store_name].push(record);
+  });
+
+  let downloadedCount = 0;
+
+  for (const storeName of JERICHO_SYNC_STORES) {
+    const cloudRecords = groupedCloudRecords[storeName] || [];
+
+    downloadedCount += cloudRecords.length;
+
+    const uniqueRecords = mergeRecords(storeName, [], cloudRecords);
+
+    await replaceStoreRecords(storeName, uniqueRecords);
+  }
+
+  localStorage.setItem(JERICHO_LAST_SYNC_KEY, new Date().toISOString());
+
+  if (typeof refreshAll === "function") {
+    await refreshAll();
+  }
+
+  return downloadedCount;
+}
 async function syncNow(options = {}) {
   const silent = options.silent === true;
 
@@ -423,7 +490,6 @@ async function syncNow(options = {}) {
 
   let downloaded = 0;
   let uploaded = 0;
-  let finalDownloaded = 0;
 
   try {
     window.__jerichoSyncBusy = true;
@@ -431,9 +497,12 @@ async function syncNow(options = {}) {
     setSyncButtonState(true, "Syncing...");
     showSyncMessage("Sync started...");
 
-    downloaded = await pullRecordsFromSupabase({ silent });
-    uploaded = await syncRecordsToSupabase({ silent });
-    finalDownloaded = await pullRecordsFromSupabase({ silent });
+    if (silent) {
+      uploaded = await syncRecordsToSupabase({ silent: true });
+      downloaded = await pullRecordsFromSupabase({ silent: true });
+    } else {
+      downloaded = await freshDownloadFromCloud({ silent: false });
+    }
 
     if (typeof refreshAll === "function") {
       await refreshAll();
@@ -447,7 +516,7 @@ async function syncNow(options = {}) {
 
     if (!silent) {
       alert(
-        `Sync complete.\nDownloaded: ${downloaded + finalDownloaded}\nUploaded: ${uploaded}`
+        `Fresh sync complete.\nDownloaded: ${downloaded}\nUploaded: ${uploaded}`
       );
     }
   } catch (error) {
@@ -458,16 +527,13 @@ async function syncNow(options = {}) {
     if (!silent) {
       alert(
         "Sync stopped.\n\n" +
-        "Downloaded before failure: " + downloaded + "\n" +
-        "Uploaded before failure: " + uploaded + "\n\n" +
-        "The detailed error should have appeared before this message."
+        "Message: " + (error?.message || "Unknown sync error")
       );
     }
   } finally {
     window.__jerichoSyncBusy = false;
   }
 }
-
 function queueAutoSync() {
   if (!navigator.onLine) {
     setSyncButtonState(false, "Offline");
