@@ -2960,10 +2960,46 @@ async function printOrExportPdf() {
 }
 
 async function exportBackup() {
-  const backup = await exportAllData();
-  downloadFile(`my-rx-backup-${todayISO()}.json`, JSON.stringify(backup, null, 2));
-  await writeAudit("backup_exported", {});
-  showToast("Backup exported.");
+  try {
+    await dbReady;
+
+    const backup = {
+      appName: "Jericho First Aid Drug Shop",
+      backupType: "full-local-backup",
+      exportedAt: new Date().toISOString(),
+      exportedBy: currentUser
+        ? {
+            id: currentUser.id,
+            name: currentUser.name,
+            email: currentUser.email,
+            role: currentUser.role
+          }
+        : null,
+
+      users: await getAll(STORE.users),
+      suppliers: await getAll(STORE.suppliers),
+      medicines: await getAll(STORE.medicines),
+      sales: await getAll(STORE.sales),
+      purchases: await getAll(STORE.purchases),
+      expenses: await getAll(STORE.expenses),
+      auditLogs: await getAll(STORE.auditLogs)
+    };
+
+    const filename = `jericho-backup-${todayISO()}.json`;
+    const content = JSON.stringify(backup, null, 2);
+
+    downloadFile(filename, content, "application/json");
+
+    await writeAudit("backup_exported", {
+      filename,
+      exportedAt: backup.exportedAt
+    });
+
+    showToast("Backup exported.");
+  } catch (error) {
+    console.error("Backup export failed:", error);
+    alert("Backup export failed:\n\n" + (error.message || error));
+  }
 }
 
 async function importBackup(file) {
