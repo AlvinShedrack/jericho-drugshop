@@ -52,44 +52,32 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
-let deferredPrompt;
+let deferredPrompt = null;
 const installAppBtn = document.getElementById('installAppBtn');
 
-// Listen for the event that allows installation
+// Capture the install event if the browser allows installation
 window.addEventListener('beforeinstallprompt', (e) => {
-  // Prevent the mini-infobar from appearing on mobile
+  // Prevent Chrome 67 and earlier from automatically showing the prompt
   e.preventDefault();
   // Stash the event so it can be triggered later.
   deferredPrompt = e;
-  // Remove the hidden class to show the install button
-  if (installAppBtn) {
-    installAppBtn.classList.remove('hidden');
-  }
 });
 
-// Handle the install button click
+// Handle the button click
 if (installAppBtn) {
   installAppBtn.addEventListener('click', async () => {
     if (deferredPrompt) {
-      // Show the install prompt
+      // The prompt is available, so show it
       deferredPrompt.prompt();
-      // Wait for the user to respond to the prompt
+      
+      // Wait for the user to respond
       const { outcome } = await deferredPrompt.userChoice;
-      // We've used the prompt, and can't use it again, throw it away
+      
+      // Clear the prompt variable since it can only be used once
       deferredPrompt = null;
-      // Hide the button again
-      installAppBtn.classList.add('hidden');
+    } else {
+      // The prompt is NOT available (app is likely already installed)
+      alert("Jericho Drug Shop is already installed on this device, or your browser does not support automatic installation.");
     }
   });
 }
-
-// Optional: Hide the button if the user successfully installs it
-window.addEventListener('appinstalled', () => {
-  // Clear the deferredPrompt so it can be garbage collected
-  deferredPrompt = null;
-  // Hide the install button
-  if (installAppBtn) {
-    installAppBtn.classList.add('hidden');
-  }
-  console.log('PWA was installed');
-});
