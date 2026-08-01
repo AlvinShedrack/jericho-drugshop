@@ -52,3 +52,44 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
+let deferredPrompt;
+const installAppBtn = document.getElementById('installAppBtn');
+
+// Listen for the event that allows installation
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Prevent the mini-infobar from appearing on mobile
+  e.preventDefault();
+  // Stash the event so it can be triggered later.
+  deferredPrompt = e;
+  // Remove the hidden class to show the install button
+  if (installAppBtn) {
+    installAppBtn.classList.remove('hidden');
+  }
+});
+
+// Handle the install button click
+if (installAppBtn) {
+  installAppBtn.addEventListener('click', async () => {
+    if (deferredPrompt) {
+      // Show the install prompt
+      deferredPrompt.prompt();
+      // Wait for the user to respond to the prompt
+      const { outcome } = await deferredPrompt.userChoice;
+      // We've used the prompt, and can't use it again, throw it away
+      deferredPrompt = null;
+      // Hide the button again
+      installAppBtn.classList.add('hidden');
+    }
+  });
+}
+
+// Optional: Hide the button if the user successfully installs it
+window.addEventListener('appinstalled', () => {
+  // Clear the deferredPrompt so it can be garbage collected
+  deferredPrompt = null;
+  // Hide the install button
+  if (installAppBtn) {
+    installAppBtn.classList.add('hidden');
+  }
+  console.log('PWA was installed');
+});
