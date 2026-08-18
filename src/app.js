@@ -243,6 +243,26 @@ async function seedInitialData() {
     },
     {
       id: 2,
+      name: "PATIENCE ANNA MUDUWA",
+      email: "patienceannamuduwa@gmail.com",
+      passwordHash: simpleHash("Budadiri"),
+      role: "Director",
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 3,
+      name: "PATIENCE ANNA MUDUWA",
+      email: "patienceannamuduwa@gmail.com",
+      passwordHash: simpleHash("Budadiri"),
+      role: "Administrator",
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 4,
       name: "Main Dispenser",
       email: "dispenser@jericho.com",
       passwordHash: simpleHash("disp2@2026"),
@@ -252,7 +272,27 @@ async function seedInitialData() {
       updatedAt: new Date().toISOString()
     },
     {
-      id: 3,
+      id: 5,
+      name: "EDRINE CHRIS",
+      email: "edrine@gmail.com",
+      passwordHash: simpleHash("Edrine"),
+      role: "Dispenser",
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 6,
+      name: "DR. MIKE",
+      email: "mike@gmail.com",
+      passwordHash: simpleHash("Mike"),
+      role: "Dispenser",
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: 7,
       name: "Director",
       email: "director@jericho.com",
       passwordHash: simpleHash("dir@2026"),
