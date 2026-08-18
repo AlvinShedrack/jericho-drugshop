@@ -207,6 +207,16 @@ function isDirector() {
   return currentUser?.role === "Director";
 }
 
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function supplierName(suppliers, id) {
   const supplier = suppliers.find(item => Number(item.id) === Number(id));
   return supplier ? supplier.name : "Not set";
@@ -517,37 +527,41 @@ async function renderDashboard() {
 
     // Build Alerts
     const alerts = [
-      ...stats.expired.slice(0, 5).map(med => {
+    ...stats.expired
+      .filter(med => med.expiryDate)
+      .slice(0, 5)
+      .map(med => {
         const batchStr = med.batchNo ? `Batch ${med.batchNo} ` : "";
-        const dateStr = med.expiryDate ? ` on ${med.expiryDate}` : "";
         return { 
           type: "danger", 
           title: `${med.name} expired`, 
-          detail: `${batchStr}expired${dateStr}`.trim() 
+          detail: `${batchStr}expired on ${med.expiryDate}`.trim() 
         };
       }),
-      ...stats.expiring.slice(0, 5).map(med => {
+    ...stats.expiring
+      .filter(med => med.expiryDate)
+      .slice(0, 5)
+      .map(med => {
         const batchStr = med.batchNo ? `Batch ${med.batchNo} ` : "";
-        const dateStr = med.expiryDate ? ` on ${med.expiryDate}` : "";
         return { 
           type: "warning", 
           title: `${med.name} expiring soon`, 
-          detail: `${batchStr}expires${dateStr}`.trim() 
+          detail: `${batchStr}expires on ${med.expiryDate}`.trim() 
         };
       }),
-      ...stats.lowStock.slice(0, 5).map(med => ({ 
-        type: "info", 
-        title: `${med.name} low stock`, 
-        detail: `${med.quantity} left. Reorder level is ${med.reorderLevel || 5}.` 
-      }))
-    ];
+    ...stats.lowStock.slice(0, 5).map(med => ({ 
+      type: "info", 
+      title: `${med.name} low stock`, 
+      detail: `${med.quantity} left. Reorder level is ${med.reorderLevel || 5}.` 
+    }))
+  ];
 
-    $("alertsList").innerHTML = alerts.length ? alerts.slice(0, 8).map(alert => `
-      <div class="alert-item">
-        <div><strong>${escapeHtml(alert.title)}</strong><br><span class="muted">${escapeHtml(alert.detail)}</span></div>
-        <span class="badge ${alert.type}">${alert.type}</span>
-      </div>
-    `).join("") : `<div class="warning-box">No priority alerts.</div>`;
+  $("alertsList").innerHTML = alerts.length ? alerts.slice(0, 8).map(alert => `
+    <div class="alert-item">
+      <div><strong>${escapeHtml(alert.title)}</strong><br><span class="muted">${escapeHtml(alert.detail)}</span></div>
+      <span class="badge ${alert.type}">${alert.type}</span>
+    </div>
+  `).join("") : `<div class="warning-box">No priority alerts.</div>`;
 
   } catch (error) {
     console.error("Error rendering dashboard:", error);
@@ -1818,7 +1832,7 @@ async function completePurchase() {
 async function renderReports() {
   const reportDate = $("reportDate").value || todayISO();
   $("reportDate").value = reportDate;
-    if ($("reportIdText")) {
+  if ($("reportIdText")) {
     $("reportIdText").textContent = `SR-${reportDate.replaceAll("-", "")}`;
   }
 
@@ -1835,9 +1849,11 @@ async function renderReports() {
   const selectedSales = sales.filter(sale => isSameDay(sale.createdAt, reportDate));
   const salesTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const profitTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.profit || 0), 0);
-  const lowStock = medicines.filter(med => Number(med.quantity) <= Number(med.reorderLevel || 5));
-  const expired = medicines.filter(med => daysUntil(med.expiryDate) < 0);
-  const expiring = medicines.filter(med => daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
+  
+  // FIX: Require med.expiryDate to exist before calculating expiry status
+  const lowStock = medicines.filter(med => Number(med.quantity || 0) <= Number(med.reorderLevel || 5));
+  const expired = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) < 0);
+  const expiring = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
 
   $("reportSalesTotal").textContent = formatMoney(salesTotal);
   $("reportProfitTotal").textContent = formatMoney(profitTotal);
@@ -1846,8 +1862,8 @@ async function renderReports() {
 
   $("reportSalesTable").innerHTML = selectedSales.length ? selectedSales.map(sale => `
     <tr>
-      <td>${escapeHtml(sale.receiptNo)}</td>
-      <td>${escapeHtml(sale.customerName)}</td>
+      <td>${escapeHtml(sale.receiptNo || "N/A")}</td>
+      <td>${escapeHtml(sale.customerName || "Walk-in")}</td>
       <td>${formatMoney(sale.total)}</td>
       <td>${formatMoney(sale.profit)}</td>
       <td>${new Date(sale.createdAt).toLocaleTimeString()}</td>
@@ -1857,21 +1873,22 @@ async function renderReports() {
   const alerts = [...expired, ...expiring, ...lowStock]
     .filter((item, index, self) => index === self.findIndex(x => x.id === item.id));
 
+  // FIX: Safely parse med.quantity and med.expiryDate with fallback values
   $("reportAlertsTable").innerHTML = alerts.length ? alerts.map(med => {
-    const d = daysUntil(med.expiryDate);
+    const d = med.expiryDate ? daysUntil(med.expiryDate) : 999;
     let status = "OK";
     let badge = "success";
     if (d < 0) { status = "Expired"; badge = "danger"; }
     else if (d <= 90) { status = "Expiring"; badge = "warning"; }
-    if (Number(med.quantity) <= Number(med.reorderLevel || 5)) {
-      status += status === "OK" ? "Low stock" : " + Low stock";
+    if (Number(med.quantity || 0) <= Number(med.reorderLevel || 5)) {
+      status = status === "OK" ? "Low stock" : `${status} + Low stock`;
       if (badge !== "danger") badge = "warning";
     }
     return `
       <tr>
-        <td>${escapeHtml(med.name)}</td>
-        <td>${med.quantity}</td>
-        <td>${escapeHtml(formatDateDisplay(med.expiryDate))}</td>
+        <td>${escapeHtml(med.name || "Unnamed")}</td>
+        <td>${Number(med.quantity || 0)}</td>
+        <td>${escapeHtml(formatDateDisplay(med.expiryDate) || "N/A")}</td>
         <td><span class="badge ${badge}">${escapeHtml(status)}</span></td>
       </tr>
     `;
@@ -2867,9 +2884,10 @@ async function buildReportsPageReport() {
   const salesTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const profitTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.profit || 0), 0);
 
-  const lowStock = medicines.filter(med => Number(med.quantity) <= Number(med.reorderLevel || 5));
-  const expired = medicines.filter(med => daysUntil(med.expiryDate) < 0);
-  const expiring = medicines.filter(med => daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
+  // FIX: Ensure expiryDate exists before calculating expiry
+  const lowStock = medicines.filter(med => Number(med.quantity || 0) <= Number(med.reorderLevel || 5));
+  const expired = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) < 0);
+  const expiring = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
 
   const alerts = [...expired, ...expiring, ...lowStock]
     .filter((item, index, self) => index === self.findIndex(x => Number(x.id) === Number(item.id)));
@@ -2892,7 +2910,7 @@ async function buildReportsPageReport() {
         ["Receipt", "Customer", "Payment", "Sale Type", "Total", "Profit", "Time"],
         selectedSales.map(sale => `
           <tr>
-            <td>${escapeHtml(sale.receiptNo)}</td>
+            <td>${escapeHtml(sale.receiptNo || "N/A")}</td>
             <td>${escapeHtml(sale.customerName || "Walk-in")}</td>
             <td>${escapeHtml(sale.paymentMethod || "")}</td>
             <td>${escapeHtml(sale.saleType || "retail")}</td>
@@ -2907,24 +2925,25 @@ async function buildReportsPageReport() {
 
     <section class="section">
       <h3>Low Stock / Expiry Alerts</h3>
-      ${makeTable(
-        ["Medicine", "Batch", "Qty", "Reorder Level", "Expiry", "Status"],
-        alerts.map(med => {
-          const status = medicineStatus(med);
-
-          return `
-            <tr>
-              <td>${escapeHtml(med.name)}</td>
-              <td>${escapeHtml(med.batchNo || "")}</td>
-              <td class="text-right">${Number(med.quantity || 0)}</td>
-              <td class="text-right">${Number(med.reorderLevel || 5)}</td>
-              <td>${escapeHtml(med.expiryDate || "")}</td>
-              <td><span class="status ${status.className}">${escapeHtml(status.label)}</span></td>
-            </tr>
-          `;
-        }),
-        "No low stock or expiry alerts."
-      )}
+      <div class="report-table-scroll">
+        ${makeTable(
+          ["Medicine", "Batch", "Qty", "Reorder Level", "Expiry", "Status"],
+          alerts.map(med => {
+            const status = medicineStatus(med) || { label: "OK", className: "status-success" };
+            return `
+              <tr>
+                <td>${escapeHtml(med.name || "Unnamed")}</td>
+                <td>${escapeHtml(med.batchNo || "N/A")}</td>
+                <td class="text-right">${Number(med.quantity || 0)}</td>
+                <td class="text-right">${Number(med.reorderLevel || 5)}</td>
+                <td>${escapeHtml(formatDateDisplay(med.expiryDate) || "N/A")}</td>
+                <td><span class="status ${status.className}">${escapeHtml(status.label)}</span></td>
+              </tr>
+            `;
+          }),
+          "No low stock or expiry alerts."
+        )}
+      </div>
     </section>
   `;
 
