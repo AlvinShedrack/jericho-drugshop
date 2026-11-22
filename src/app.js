@@ -2,6 +2,7 @@ const STORE = {
   users: "users",
   suppliers: "suppliers",
   medicines: "medicines",
+  batches: "batches",
   sales: "sales",
   purchases: "purchases",
   expenses: "expenses",
@@ -26,6 +27,7 @@ const BRAND = {
   phone: "0774 658 920 / 0753 635 469 / 0756 303 274",
   email: "annapatiencenuduwa@gmail.com"
 };
+
 const pageMeta = {
   dashboard: ["Dashboard", "Business overview and alerts"],
   inventory: ["Inventory", "Medicine stock, batches, prices, and expiry"],
@@ -138,20 +140,15 @@ function isSameDay(isoDate, dateString) {
 }
 
 function daysUntil(dateString) {
-  if (!dateString) return -999999;
+  if (!dateString) return 999999;
 
   const isoDate = toIsoDate(dateString);
-
-  if (!isoDate) {
-    return -999999;
-  }
+  if (!isoDate) return 999999;
 
   const today = new Date(`${todayISO()}T00:00:00`);
   const target = new Date(`${isoDate}T00:00:00`);
 
-  if (Number.isNaN(target.getTime())) {
-    return -999999;
-  }
+  if (Number.isNaN(target.getTime())) return 999999;
 
   return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
 }
@@ -207,36 +204,142 @@ function isDirector() {
   return currentUser?.role === "Director";
 }
 
-function escapeHtml(str) {
-  if (str == null) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function supplierName(suppliers, id) {
   const supplier = suppliers.find(item => Number(item.id) === Number(id));
   return supplier ? supplier.name : "Not set";
 }
-async function deleteCloudRecord(storeName, id) {
-  if (typeof markCloudRecordDeleted === "function") {
-    await markCloudRecordDeleted(storeName, id);
-    return;
+
+function normalizeRecordId(id) {
+  const value = String(id ?? "").trim();
+
+  if (value !== "" && /^-?\d+$/.test(value)) {
+    return Number(value);
   }
 
-  const { error } = await window.cloudClient
-    .from("jericho_records")
-    .delete()
-    .eq("store_name", storeName)
-    .eq("local_id", String(id));
-
-  if (error) {
-    throw error;
-  }
+  return value;
 }
+
+async function findLocalRecordById(storeName, id) {
+  if (id === undefined || id === null || id === "") return null;
+  const normalizedId = normalizeRecordId(id);
+
+  let record = await getById(storeName, normalizedId);
+  if (record) return record;
+
+  const records = await getAll(storeName);
+  return records.find(item => String(item.id) === String(id)) || null;
+}
+
+async function recalculateMedicineFromBatches(medicineId) {
+  const med = await findLocalRecordById(STORE.medicines, medicineId);
+  if (!med) return null;
+
+  const allBatches = (await getAll(STORE.batches)).filter(b =>
+    b &&
+    !b._deleted &&
+    String(b.medicineId) === String(med.id)
+  );
+
+  const totalQty = allBatches.reduce((sum, b) => sum + Math.max(0, Number(b.quantity || 0)), 0);
+
+  const activeBatches = allBatches
+    .filter(b => Number(b.quantity || 0) > 0)
+    .sort((a, b) => {
+      const isoA = toIsoDate(a.expiryDate) || "9999-12-31";
+      const isoB = toIsoDate(b.expiryDate) || "9999-12-31";
+      return isoA.localeCompare(isoB);
+    });
+
+  const primaryBatch = activeBatches[0] || allBatches[allBatches.length - 1] || null;
+
+  med.quantity = totalQty;
+  if (primaryBatch) {
+    med.batchNo = primaryBatch.batchNo || med.batchNo || "";
+    med.expiryDate = primaryBatch.expiryDate || med.expiryDate || "";
+    if (primaryBatch.buyingPrice !== undefined) med.buyingPrice = Number(primaryBatch.buyingPrice || 0);
+    if (primaryBatch.retailPrice !== undefined && Number(primaryBatch.retailPrice) > 0) {
+      med.sellingPrice = Number(primaryBatch.retailPrice);
+    }
+  }
+  med.updatedAt = new Date().toISOString();
+
+  await putRecord(STORE.medicines, med);
+  return med;
+}
+
+async function adjustBatchStock(batchId, medicineId, batchNo, deltaQty, meta = {}) {
+  const batches = (await getAll(STORE.batches)).filter(b => b && !b._deleted);
+  let targetBatch = null;
+
+  if (batchId) {
+    targetBatch = batches.find(b => String(b.id) === String(batchId)) || null;
+  }
+
+  if (!targetBatch && medicineId && batchNo) {
+    targetBatch = batches.find(b =>
+      String(b.medicineId) === String(medicineId) &&
+      String(b.batchNo || "").trim().toLowerCase() === String(batchNo || "").trim().toLowerCase()
+    ) || null;
+  }
+
+  if (targetBatch) {
+    targetBatch.quantity = Math.max(0, Number(targetBatch.quantity || 0) + Number(deltaQty || 0));
+    if (meta.unitCost !== undefined && Number(deltaQty) > 0) {
+      targetBatch.buyingPrice = Number(meta.unitCost || 0);
+    }
+    if (meta.retailPrice !== undefined && Number(meta.retailPrice) > 0) {
+      targetBatch.retailPrice = Number(meta.retailPrice);
+    }
+    if (meta.expiryDate) {
+      targetBatch.expiryDate = meta.expiryDate;
+    }
+    if (meta.supplierId) {
+      targetBatch.supplierId = meta.supplierId;
+    }
+    if (meta.invoiceNo) {
+      targetBatch.invoiceNo = meta.invoiceNo;
+    }
+    targetBatch.updatedAt = new Date().toISOString();
+    await putRecord(STORE.batches, targetBatch);
+    if (medicineId) {
+      await recalculateMedicineFromBatches(medicineId);
+    }
+    return targetBatch;
+  }
+
+  if (Number(deltaQty) > 0 && medicineId) {
+    const med = await findLocalRecordById(STORE.medicines, medicineId);
+    const newBatch = {
+      medicineId: med ? med.id : medicineId,
+      medicineName: med ? med.name : (meta.medicineName || ""),
+      batchNo: batchNo || "BATCH-1",
+      expiryDate: meta.expiryDate || "",
+      quantity: Number(deltaQty || 0),
+      buyingPrice: Number(meta.unitCost ?? med?.buyingPrice ?? 0),
+      retailPrice: Number(meta.retailPrice ?? med?.sellingPrice ?? 0),
+      supplierId: meta.supplierId || "",
+      invoiceNo: meta.invoiceNo || "",
+      purchaseDate: meta.purchaseDate || formatDateDisplay(new Date().toISOString()),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const newId = await addRecord(STORE.batches, newBatch);
+    await recalculateMedicineFromBatches(medicineId);
+    return { ...newBatch, id: newId };
+  }
+
+  if (medicineId) {
+    const med = await findLocalRecordById(STORE.medicines, medicineId);
+    if (med) {
+      med.quantity = Math.max(0, Number(med.quantity || 0) + Number(deltaQty || 0));
+      med.updatedAt = new Date().toISOString();
+      await putRecord(STORE.medicines, med);
+    }
+  }
+
+  return null;
+}
+
 async function seedInitialData() {
   const users = await getAll(STORE.users);
   const existingEmails = new Set(users.map(user => String(user.email || "").toLowerCase()));
@@ -257,16 +360,6 @@ async function seedInitialData() {
       email: "patienceannamuduwa@gmail.com",
       passwordHash: simpleHash("Budadiri"),
       role: "Director",
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: 3,
-      name: "PATIENCE ANNA MUDUWA",
-      email: "patienceannamuduwa@gmail.com",
-      passwordHash: simpleHash("Budadiri"),
-      role: "Administrator",
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -377,7 +470,7 @@ function logout() {
 
 function showApp() {
   document.body.classList.add("is-authenticated");
-  
+
   $("loginScreen").classList.add("hidden");
   $("appShell").classList.remove("hidden");
   $("currentUserText").innerHTML = `<strong>${escapeHtml(currentUser.name)}</strong><br>${escapeHtml(currentUser.role)}`;
@@ -394,17 +487,14 @@ function applyRoleAccess() {
   const manager = ["Administrator", "Director"].includes(currentUser?.role);
   const directorOnly = currentUser?.role === "Director";
 
-  // Admin / Director only
   document.querySelectorAll(".admin-only").forEach(el => {
     el.classList.toggle("hidden", !manager);
   });
 
-  // Director only
   document.querySelectorAll(".director-only").forEach(el => {
     el.classList.toggle("hidden", !directorOnly);
   });
 
-  // Old class still used in your HTML: hide it from Dispenser
   document.querySelectorAll(".pharmacist-admin-only").forEach(el => {
     el.classList.toggle("hidden", !manager);
   });
@@ -458,7 +548,12 @@ function showPage(pageId) {
   $("pageTitle").textContent = title;
   $("pageSubtitle").textContent = subtitle;
 
-  if (pageId === "reports") renderReports();
+  if (pageId === "reports" || pageId === "sales") {
+    renderMonthlySales();
+  }
+  if (pageId === "reports") {
+    renderReports();
+  }
 }
 
 function openModal(id) {
@@ -468,23 +563,26 @@ function openModal(id) {
 function closeModal(id) {
   $(id).classList.add("hidden");
 }
+
 async function getDashboardStats() {
   const medicines = await getAll(STORE.medicines);
-  const sales = await getAll(STORE.sales);
+  const batches = (await getAll(STORE.batches)).filter(b => b && !b._deleted);
+  const sales = (await getAll(STORE.sales)).filter(s => s && !s._deleted);
   const today = todayISO();
 
-  // Filter lists
   const todaySalesList = sales.filter(sale => isSameDay(sale.createdAt, today));
-  
-  // Safe number parsing to prevent NaN errors if a field is accidentally left blank in the DB
-  const lowStock = medicines.filter(med => (Number(med.quantity) || 0) <= (Number(med.reorderLevel) || 5));
-  const expiring = medicines.filter(med => daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
-  const expired = medicines.filter(med => daysUntil(med.expiryDate) < 0);
 
-  // Calculate totals safely
+  const lowStock = medicines.filter(med => (Number(med.quantity) || 0) <= (Number(med.reorderLevel) || 5));
+
+  const alertSources = batches.length ? batches : medicines;
+  const expiring = alertSources.filter(item => item.expiryDate && daysUntil(item.expiryDate) >= 0 && daysUntil(item.expiryDate) <= 90);
+  const expired = alertSources.filter(item => item.expiryDate && daysUntil(item.expiryDate) < 0);
+
   const todaySalesTotal = todaySalesList.reduce((sum, sale) => sum + (Number(sale.total) || 0), 0);
   const todayProfitTotal = todaySalesList.reduce((sum, sale) => sum + (Number(sale.profit) || 0), 0);
-  const stockValue = medicines.reduce((sum, med) => sum + ((Number(med.quantity) || 0) * (Number(med.buyingPrice) || 0)), 0);
+  const stockValue = batches.length
+    ? batches.reduce((sum, b) => sum + ((Number(b.quantity) || 0) * (Number(b.buyingPrice) || 0)), 0)
+    : medicines.reduce((sum, med) => sum + ((Number(med.quantity) || 0) * (Number(med.buyingPrice) || 0)), 0);
 
   const recentSales = [...sales]
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -502,11 +600,11 @@ async function getDashboardStats() {
     recentSales
   };
 }
+
 async function renderDashboard() {
   try {
     const stats = await getDashboardStats();
 
-    // Update DOM numbers
     $("dashTotalMedicines").textContent = stats.medicinesCount;
     $("dashLowStock").textContent = stats.lowStock.length;
     $("dashExpiring").textContent = stats.expiring.length;
@@ -514,7 +612,6 @@ async function renderDashboard() {
     $("dashTodayProfit").textContent = formatMoney(stats.todayProfitTotal);
     $("dashStockValue").textContent = formatMoney(stats.stockValue);
 
-    // Build Recent Sales Table (limit to 8 for the dashboard view)
     const topRecent = stats.recentSales.slice(0, 8);
     $("recentSalesTable").innerHTML = topRecent.length ? topRecent.map(sale => `
       <tr>
@@ -525,44 +622,44 @@ async function renderDashboard() {
       </tr>
     `).join("") : `<tr><td colspan="4">No sales yet.</td></tr>`;
 
-    // Build Alerts
     const alerts = [
-    ...stats.expired
-      .filter(med => med.expiryDate)
-      .slice(0, 5)
-      .map(med => {
-        const batchStr = med.batchNo ? `Batch ${med.batchNo} ` : "";
-        return { 
-          type: "danger", 
-          title: `${med.name} expired`, 
-          detail: `${batchStr}expired on ${med.expiryDate}`.trim() 
-        };
-      }),
-    ...stats.expiring
-      .filter(med => med.expiryDate)
-      .slice(0, 5)
-      .map(med => {
-        const batchStr = med.batchNo ? `Batch ${med.batchNo} ` : "";
-        return { 
-          type: "warning", 
-          title: `${med.name} expiring soon`, 
-          detail: `${batchStr}expires on ${med.expiryDate}`.trim() 
-        };
-      }),
-    ...stats.lowStock.slice(0, 5).map(med => ({ 
-      type: "info", 
-      title: `${med.name} low stock`, 
-      detail: `${med.quantity} left. Reorder level is ${med.reorderLevel || 5}.` 
-    }))
-  ];
+      ...stats.expired
+        .filter(item => item.expiryDate)
+        .slice(0, 5)
+        .map(item => {
+          const label = item.medicineName || item.name || "Medicine";
+          const batchStr = item.batchNo ? `Batch ${item.batchNo} ` : "";
+          return {
+            type: "danger",
+            title: `${label} expired`,
+            detail: `${batchStr}expired on ${formatDateDisplay(item.expiryDate)}`.trim()
+          };
+        }),
+      ...stats.expiring
+        .filter(item => item.expiryDate)
+        .slice(0, 5)
+        .map(item => {
+          const label = item.medicineName || item.name || "Medicine";
+          const batchStr = item.batchNo ? `Batch ${item.batchNo} ` : "";
+          return {
+            type: "warning",
+            title: `${label} expiring soon`,
+            detail: `${batchStr}expires on ${formatDateDisplay(item.expiryDate)}`.trim()
+          };
+        }),
+      ...stats.lowStock.slice(0, 5).map(med => ({
+        type: "info",
+        title: `${med.name} low stock`,
+        detail: `${med.quantity} left. Reorder level is ${med.reorderLevel || 5}.`
+      }))
+    ];
 
-  $("alertsList").innerHTML = alerts.length ? alerts.slice(0, 8).map(alert => `
-    <div class="alert-item">
-      <div><strong>${escapeHtml(alert.title)}</strong><br><span class="muted">${escapeHtml(alert.detail)}</span></div>
-      <span class="badge ${alert.type}">${alert.type}</span>
-    </div>
-  `).join("") : `<div class="warning-box">No priority alerts.</div>`;
-
+    $("alertsList").innerHTML = alerts.length ? alerts.slice(0, 8).map(alert => `
+      <div class="alert-item">
+        <div><strong>${escapeHtml(alert.title)}</strong><br><span class="muted">${escapeHtml(alert.detail)}</span></div>
+        <span class="badge ${alert.type}">${alert.type}</span>
+      </div>
+    `).join("") : `<div class="warning-box">No priority alerts.</div>`;
   } catch (error) {
     console.error("Error rendering dashboard:", error);
     $("alertsList").innerHTML = `<div class="warning-box" style="color: red;">Failed to load dashboard data. Please refresh the page.</div>`;
@@ -571,6 +668,7 @@ async function renderDashboard() {
 
 async function renderInventory() {
   const medicines = await getAll(STORE.medicines);
+  const batches = (await getAll(STORE.batches)).filter(b => b && !b._deleted);
   const suppliers = await getAll(STORE.suppliers);
   const medicineSearch = $("medicineSearch");
   const medicineStatusFilter = $("medicineStatusFilter");
@@ -579,26 +677,31 @@ async function renderInventory() {
   const filter = medicineStatusFilter?.value || "all";
 
   let filtered = medicines.filter(med => {
+    const medBatches = batches.filter(b => String(b.medicineId) === String(med.id));
+    const batchText = medBatches.map(b => `${b.batchNo || ""} ${b.expiryDate || ""}`).join(" ");
     const supplier = supplierName(suppliers, med.supplierId).toLowerCase();
-    const haystack = `${med.name} ${med.genericName} ${med.batchNo} ${med.category} ${supplier}`.toLowerCase();
+    const haystack = `${med.name} ${med.genericName} ${med.batchNo} ${batchText} ${med.category} ${supplier}`.toLowerCase();
     return haystack.includes(search);
   });
 
   filtered = filtered.filter(med => {
-    const d = daysUntil(med.expiryDate);
+    const medBatches = batches.filter(b => String(b.medicineId) === String(med.id));
+    const dates = medBatches.length ? medBatches.map(b => daysUntil(b.expiryDate)) : [daysUntil(med.expiryDate)];
+    const minDays = Math.min(...dates);
     const isLow = Number(med.quantity) <= Number(med.reorderLevel || 5);
     if (filter === "low") return isLow;
-    if (filter === "expiring") return d >= 0 && d <= 90;
-    if (filter === "expired") return d < 0;
+    if (filter === "expiring") return minDays >= 0 && minDays <= 90;
+    if (filter === "expired") return minDays < 0;
     return true;
   });
 
   filtered.sort((a, b) => a.name.localeCompare(b.name));
 
   $("medicineTable").innerHTML = filtered.length ? filtered.map(med => {
-    const d = daysUntil(med.expiryDate);
-    const stockBadge = Number(med.quantity) <= Number(med.reorderLevel || 5) ? "warning" : "success";
-    const expiryBadge = d < 0 ? "danger" : d <= 90 ? "warning" : "success";
+    const medBatches = batches.filter(b => String(b.medicineId) === String(med.id) && Number(b.quantity || 0) > 0);
+    const batchSummary = medBatches.length
+      ? medBatches.map(b => `Batch ${escapeHtml(b.batchNo)}: ${Number(b.quantity)} @ ${formatMoney(b.retailPrice || med.sellingPrice)} (Exp ${escapeHtml(formatDateDisplay(b.expiryDate) || "N/A")})`).join("<br>")
+      : `Total Qty: ${Number(med.quantity || 0)}`;
     const canEdit = requireRole(["Administrator", "Director"]);
     return `
       <tr>
@@ -607,14 +710,14 @@ async function renderInventory() {
         <td>${formatMoney(med.sellingPrice)}</td>
         ${canManagePricing ? `<td>${formatMoney(med.wholesalePrice)}</td>` : ""}
         <td>${Number(med.reorderLevel || 5)}</td>
-        <td>${escapeHtml(med.notes || "")}</td>
+        <td>${batchSummary}${med.notes ? `<br><span class="muted">${escapeHtml(med.notes)}</span>` : ""}</td>
         <td>
           ${canEdit ? `<button class="table-btn" data-action="edit-medicine" data-id="${med.id}">Edit</button>` : ""}
           ${canEdit ? `<button class="table-btn danger" data-action="delete-medicine" data-id="${med.id}">Delete</button>` : ""}
         </td>
       </tr>
     `;
-  }).join("") : `<tr><td colspan="9">No medicines found.</td></tr>`;
+  }).join("") : `<tr><td colspan="7">No medicines found.</td></tr>`;
 }
 
 async function populateSupplierOptions() {
@@ -626,18 +729,22 @@ async function populateSupplierOptions() {
 
 async function populateMedicineOptions() {
   const medicines = await getAll(STORE.medicines);
+  const batches = (await getAll(STORE.batches)).filter(b => b && !b._deleted && Number(b.quantity || 0) > 0);
   const canManagePricing = requireRole(["Administrator", "Director"]);
 
   const saleOptions = medicines
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(med => {
+      const medBatches = batches.filter(b => String(b.medicineId) === String(med.id));
+      const batchCountLabel = medBatches.length ? ` | ${medBatches.length} batch(es)` : "";
       const priceLabel = canManagePricing && med.wholesalePrice
         ? ` | Wholesale ${formatMoney(med.wholesalePrice)}`
         : "";
 
-      return `<option value="${escapeHtml(med.name)}">${escapeHtml(med.name)} | Qty ${med.quantity} | ${formatMoney(med.sellingPrice)}${priceLabel}</option>`;
+      return `<option value="${escapeHtml(med.name)}">${escapeHtml(med.name)} | Qty ${med.quantity}${batchCountLabel} | ${formatMoney(med.sellingPrice)}${priceLabel}</option>`;
     })
     .join("");
+
   if ($("saleMedicineList")) {
     $("saleMedicineList").innerHTML = saleOptions;
   }
@@ -645,6 +752,7 @@ async function populateMedicineOptions() {
   if ($("saleMedicineSelect")) {
     $("saleMedicineSelect").placeholder = "Select or type medicine";
   }
+
   const purchaseOptions = medicines
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(med => `<option value="${escapeHtml(med.name)}"></option>`)
@@ -657,30 +765,49 @@ async function populateMedicineOptions() {
   if ($("purchaseMedicineSelect")) {
     $("purchaseMedicineSelect").placeholder = "Select or type medicine";
   }
-}
-function normalizeRecordId(id) {
-  const value = String(id ?? "").trim();
 
-  if (value !== "" && /^-?\d+$/.test(value)) {
-    return Number(value);
+  await populateSaleBatchOptions($("saleMedicineSelect")?.value || "");
+}
+
+async function populateSaleBatchOptions(medicineName = "", selectedBatchId = "", selectedBatchNo = "") {
+  const select = $("saleBatchSelect");
+  if (!select) return;
+
+  const cleanName = String(medicineName || $("saleMedicineSelect")?.value || "").trim().toLowerCase();
+  if (!cleanName) {
+    select.innerHTML = `<option value="">Select medicine first</option>`;
+    return;
   }
 
-  return value;
-}
+  const batches = (await getAll(STORE.batches))
+    .filter(b => b && !b._deleted)
+    .filter(b => String(b.medicineName || "").trim().toLowerCase() === cleanName)
+    .filter(b => Number(b.quantity || 0) > 0 || (selectedBatchId && String(b.id) === String(selectedBatchId)))
+    .sort((a, b) => {
+      const isoA = toIsoDate(a.expiryDate) || "9999-12-31";
+      const isoB = toIsoDate(b.expiryDate) || "9999-12-31";
+      return isoA.localeCompare(isoB);
+    });
 
-async function findLocalRecordById(storeName, id) {
-  const normalizedId = normalizeRecordId(id);
-
-  let record = await getById(storeName, normalizedId);
-
-  if (record) {
-    return record;
+  if (!batches.length) {
+    select.innerHTML = `<option value="">Manual / No active batch</option>`;
+    return;
   }
 
-  const records = await getAll(storeName);
+  select.innerHTML = batches.map(b => `
+    <option value="${escapeHtml(b.id)}">
+      Batch ${escapeHtml(b.batchNo)} | Exp: ${escapeHtml(formatDateDisplay(b.expiryDate) || "N/A")} | Qty: ${Number(b.quantity || 0)} | ${formatMoney(b.retailPrice || 0)}
+    </option>
+  `).join("");
 
-  return records.find(item => String(item.id) === String(id)) || null;
+  if (selectedBatchId && batches.some(b => String(b.id) === String(selectedBatchId))) {
+    select.value = String(selectedBatchId);
+  } else if (selectedBatchNo) {
+    const matchByNo = batches.find(b => String(b.batchNo).toLowerCase() === String(selectedBatchNo).toLowerCase());
+    if (matchByNo) select.value = String(matchByNo.id);
+  }
 }
+
 async function openMedicineForm(id = null) {
   await populateSupplierOptions();
 
@@ -732,6 +859,7 @@ async function saveMedicine(event) {
     name: $("medicineName").value.trim(),
     genericName: $("genericName").value.trim(),
     category: $("category").value.trim(),
+    quantity: existing ? Number(existing.quantity || 0) : 0,
     sellingPrice: Number($("sellingPrice").value || 0),
     wholesalePrice: Number($("wholesalePrice").value || 0),
     reorderLevel: Number($("reorderLevel").value || 5),
@@ -762,29 +890,7 @@ async function saveMedicine(event) {
     queueAutoSync();
   }
 }
-function normalizeRecordId(id) {
-  const value = String(id ?? "").trim();
 
-  if (value !== "" && /^-?\d+$/.test(value)) {
-    return Number(value);
-  }
-
-  return value;
-}
-
-async function findLocalRecordById(storeName, id) {
-  const normalizedId = normalizeRecordId(id);
-
-  let record = await getById(storeName, normalizedId);
-
-  if (record) {
-    return record;
-  }
-
-  const records = await getAll(storeName);
-
-  return records.find(item => String(item.id) === String(id)) || null;
-}
 async function deleteMedicine(id) {
   if (!requireRole(["Administrator", "Director"])) {
     return showToast("Not allowed.");
@@ -879,12 +985,15 @@ async function openSupplierForm(id = null) {
 
 async function renderDashboardMedicineSearch() {
   const medicines = await getAll(STORE.medicines);
+  const batches = (await getAll(STORE.batches)).filter(b => b && !b._deleted && Number(b.quantity || 0) > 0);
   const query = ($("dashMedicineSearch")?.value || "").toLowerCase().trim();
   const canManagePricing = requireRole(["Administrator", "Director"]);
 
   const filtered = medicines
     .filter(med => {
-      const text = `${med.name} ${med.genericName} ${med.batchNo}`.toLowerCase();
+      const medBatches = batches.filter(b => String(b.medicineId) === String(med.id));
+      const batchStr = medBatches.map(b => b.batchNo || "").join(" ");
+      const text = `${med.name} ${med.genericName} ${med.batchNo} ${batchStr}`.toLowerCase();
       return text.includes(query);
     })
     .slice(0, 10);
@@ -897,14 +1006,21 @@ async function renderDashboardMedicineSearch() {
     return;
   }
 
-  container.innerHTML = filtered.length ? filtered.map(med => `
-    <div class="price-search-item">
-      <strong>${escapeHtml(med.name)}</strong>
-      <div>Retail: ${formatMoney(med.sellingPrice)}</div>
-      ${canManagePricing ? `<div>Wholesale: ${formatMoney(med.wholesalePrice)}</div>` : ""}
-      <div>Available Qty: ${Number(med.quantity || 0)}</div>
-    </div>
-  `).join("") : `<div class="muted">No medicine found.</div>`;
+  container.innerHTML = filtered.length ? filtered.map(med => {
+    const medBatches = batches.filter(b => String(b.medicineId) === String(med.id));
+    const batchDetails = medBatches.length
+      ? `<div class="muted">Batches: ${medBatches.map(b => `${escapeHtml(b.batchNo)} (${Number(b.quantity)} @ ${formatMoney(b.retailPrice || med.sellingPrice)})`).join(", ")}</div>`
+      : "";
+    return `
+      <div class="price-search-item">
+        <strong>${escapeHtml(med.name)}</strong>
+        <div>Retail: ${formatMoney(med.sellingPrice)}</div>
+        ${canManagePricing ? `<div>Wholesale: ${formatMoney(med.wholesalePrice)}</div>` : ""}
+        <div>Available Qty: ${Number(med.quantity || 0)}</div>
+        ${batchDetails}
+      </div>
+    `;
+  }).join("") : `<div class="muted">No medicine found.</div>`;
 }
 
 async function saveSupplier(event) {
@@ -981,8 +1097,10 @@ async function deleteSupplier(id) {
     showToast(error.message || "Supplier delete failed.");
   }
 }
+
 async function addToCart() {
   const saleMedicineSelect = $("saleMedicineSelect");
+  const saleBatchSelect = $("saleBatchSelect");
   const saleQtyInput = $("saleQty");
   const saleDiscountInput = $("saleDiscount");
 
@@ -1000,15 +1118,26 @@ async function addToCart() {
   }
 
   const medicines = await getAll(STORE.medicines);
+  const batches = (await getAll(STORE.batches)).filter(b => b && !b._deleted);
 
   const med = medicines.find(item =>
     String(item.name || "").trim().toLowerCase() === medicineName.toLowerCase()
   );
 
+  const selectedBatchId = saleBatchSelect?.value || "";
+  const chosenBatch = selectedBatchId
+    ? batches.find(b => String(b.id) === String(selectedBatchId)) || null
+    : null;
+
   const saleType = $("saleType")?.value || "retail";
 
-  let effectivePrice = med ? Number(med.sellingPrice || 0) : 0;
-  let buyingPrice = med ? Number(med.buyingPrice || 0) : 0;
+  let effectivePrice = chosenBatch && Number(chosenBatch.retailPrice || 0) > 0
+    ? Number(chosenBatch.retailPrice)
+    : (med ? Number(med.sellingPrice || 0) : 0);
+
+  let buyingPrice = chosenBatch && chosenBatch.buyingPrice !== undefined
+    ? Number(chosenBatch.buyingPrice || 0)
+    : (med ? Number(med.buyingPrice || 0) : 0);
 
   if (med && saleType === "wholesale") {
     effectivePrice = med.wholesalePrice
@@ -1016,7 +1145,7 @@ async function addToCart() {
       : Math.round(effectivePrice * 0.9);
   }
 
-  if (!med || effectivePrice <= 0) {
+  if (!med && !chosenBatch || effectivePrice <= 0) {
     effectivePrice = Number(
       prompt(`Enter selling price for ${medicineName}:`) || 0
     );
@@ -1026,26 +1155,28 @@ async function addToCart() {
     }
   }
 
-  if (!med) {
+  if (!med && !chosenBatch) {
     buyingPrice = Number(
       prompt(`Enter buying price/cost for ${medicineName} (optional):`) || 0
     );
   }
 
   cart.push({
-    medicineId: med ? med.id : null,
-    name: med ? med.name : medicineName,
-    batchNo: med ? med.batchNo : "Manual entry",
+    medicineId: med ? med.id : (chosenBatch?.medicineId || null),
+    batchId: chosenBatch ? chosenBatch.id : null,
+    name: med ? med.name : (chosenBatch?.medicineName || medicineName),
+    batchNo: chosenBatch ? chosenBatch.batchNo : (med?.batchNo || "Manual entry"),
     qty,
     sellingPrice: effectivePrice,
     buyingPrice,
     discount: Math.max(0, discount),
     saleType,
-    manualEntry: !med,
+    manualEntry: !med && !chosenBatch,
     allowOutOfStock: true
   });
 
   if (saleMedicineSelect) saleMedicineSelect.value = "";
+  if (saleBatchSelect) saleBatchSelect.innerHTML = `<option value="">Select medicine first</option>`;
   if (saleQtyInput) saleQtyInput.value = "";
   if (saleDiscountInput) saleDiscountInput.value = "";
 
@@ -1113,11 +1244,22 @@ async function editSale(id) {
     note.textContent = `Editing sale ${sale.receiptNo}`;
   }
 
+  showPage("sales");
   renderCart();
 }
 
+async function viewSaleReceipt(id) {
+  const sale = await findLocalRecordById(STORE.sales, id);
+
+  if (!sale) {
+    return showToast("Sale not found. Refresh and try again.");
+  }
+
+  showReceipt(sale);
+}
+
 async function renderSalesHistory() {
-  const sales = await getAll(STORE.sales);
+  const sales = (await getAll(STORE.sales)).filter(s => s && !s._deleted);
   const canDelete = requireRole(["Administrator", "Director"]);
 
   const rows = sales
@@ -1129,6 +1271,7 @@ async function renderSalesHistory() {
         <td>${formatMoney(sale.total)}</td>
         <td>${formatDateDisplay(sale.createdAt)}</td>
         <td>
+          <button class="table-btn" data-action="view-receipt" data-id="${sale.id}">Receipt</button>
           <button class="table-btn" data-action="edit-sale" data-id="${sale.id}">Edit</button>
           ${canDelete ? `<button class="table-btn danger" data-action="delete-sale" data-id="${sale.id}">Delete</button>` : ""}
         </td>
@@ -1137,6 +1280,7 @@ async function renderSalesHistory() {
 
   $("salesHistoryTable").innerHTML = rows || `<tr><td colspan="5">No sales recorded yet.</td></tr>`;
 }
+
 async function deleteSale(id) {
   if (!requireRole(["Administrator", "Director"])) {
     return showToast("Only Administrator or Director can delete sales.");
@@ -1155,13 +1299,13 @@ async function deleteSale(id) {
   try {
     if (Array.isArray(sale.lines)) {
       for (const item of sale.lines) {
-        const med = await findLocalRecordById(STORE.medicines, item.medicineId);
-        if (!med) continue;
-
-        med.quantity = Number(med.quantity || 0) + Number(item.qty || 0);
-        med.updatedAt = new Date().toISOString();
-
-        await putRecord(STORE.medicines, med);
+        await adjustBatchStock(
+          item.batchId,
+          item.medicineId,
+          item.batchNo,
+          Number(item.qty || 0),
+          { medicineName: item.name }
+        );
       }
     }
 
@@ -1190,6 +1334,7 @@ async function deleteSale(id) {
     showToast(error.message || "Sale delete failed.");
   }
 }
+
 async function completeSale() {
   if (!cart.length) {
     return showToast("Cart is empty.");
@@ -1231,8 +1376,6 @@ async function completeSale() {
     ? originalSale.lines
     : [];
 
-
-
   const profit = cart.reduce((sum, item) => {
     const itemRevenue = Math.max(
       0,
@@ -1246,24 +1389,24 @@ async function completeSale() {
 
   if (editingSaleId && originalLines.length) {
     for (const item of originalLines) {
-      const med = await findLocalRecordById(STORE.medicines, item.medicineId);
-      if (!med) continue;
-
-      med.quantity = Number(med.quantity || 0) + Number(item.qty || 0);
-      med.updatedAt = new Date().toISOString();
-
-      await putRecord(STORE.medicines, med);
+      await adjustBatchStock(
+        item.batchId,
+        item.medicineId,
+        item.batchNo,
+        Number(item.qty || 0),
+        { medicineName: item.name }
+      );
     }
   }
 
   for (const item of cart) {
-    const med = await findLocalRecordById(STORE.medicines, item.medicineId);
-    if (!med) continue;
-
-    med.quantity = Number(med.quantity || 0) - Number(item.qty || 0);
-    med.updatedAt = new Date().toISOString();
-
-    await putRecord(STORE.medicines, med);
+    await adjustBatchStock(
+      item.batchId,
+      item.medicineId,
+      item.batchNo,
+      -Number(item.qty || 0),
+      { medicineName: item.name }
+    );
   }
 
   const saleData = {
@@ -1333,6 +1476,7 @@ function showReceipt(sale) {
   const total = Number(sale.total || 0);
   const amountPaid = Number(sale.amountPaid || 0);
   const changeGiven = Number(sale.changeGiven || 0);
+  const receiptBadge = sale.printedAt ? `<br><span class="badge info">Reprint</span>` : "";
 
   $("receiptContent").innerHTML = `
     <img src="${BRAND.logo}" class="receipt-watermark" alt="" />
@@ -1348,7 +1492,7 @@ function showReceipt(sale) {
         </div>
       </div>
 
-      <div class="receipt-title">Sales Receipt</div>
+      <div class="receipt-title">Sales Receipt${receiptBadge}</div>
 
       <div class="receipt-meta-grid">
         <div>
@@ -1397,7 +1541,7 @@ function showReceipt(sale) {
           ${sale.lines.map((item, index) => `
             <tr>
               <td>${index + 1}</td>
-              <td>${escapeHtml(item.name)}</td>
+              <td>${escapeHtml(item.name)}${item.batchNo ? ` <span class="muted">(${escapeHtml(item.batchNo)})</span>` : ""}</td>
               <td>${item.qty}</td>
               <td>${formatMoney(item.sellingPrice)}</td>
               <td>${formatMoney((item.qty * item.sellingPrice) - item.discount)}</td>
@@ -1443,7 +1587,6 @@ function showReceipt(sale) {
   openModal("receiptModal");
 }
 
-
 async function renderPurchaseHistory() {
   const purchases = (await getAll(STORE.purchases))
     .filter(purchase => {
@@ -1479,6 +1622,7 @@ async function renderPurchaseHistory() {
           <td>${formatMoney(Number(line.qty || 0) * Number(line.unitCost || 0))}</td>
           <td>${formatMoney(purchase.total || 0)}</td>
           <td>
+            <button class="table-btn" data-action="view-purchase" data-id="${purchase.id}">View</button>
             <button class="table-btn" data-action="edit-purchase" data-id="${purchase.id}">Edit</button>
             <button class="table-btn danger" data-action="delete-purchase" data-id="${purchase.id}">Delete</button>
           </td>
@@ -1493,6 +1637,66 @@ async function renderPurchaseHistory() {
       : `<tr><td colspan="12">No saved purchases yet.</td></tr>`;
   }
 }
+
+async function viewPurchaseInvoice(id) {
+  const purchase = await findLocalRecordById(STORE.purchases, id);
+
+  if (!purchase) {
+    return showToast("Purchase invoice not found. Refresh and try again.");
+  }
+
+  const suppliers = await getAll(STORE.suppliers);
+  const supplier = suppliers.find(item => String(item.id) === String(purchase.supplierId));
+  const lines = Array.isArray(purchase.lines) ? purchase.lines : [];
+
+  $("purchaseInvoiceContent").innerHTML = `
+    <div class="form-grid three" style="margin-bottom: 14px;">
+      <div><strong>Invoice No.:</strong><br>${escapeHtml(purchase.invoiceNo || "")}</div>
+      <div><strong>Supplier:</strong><br>${escapeHtml(supplier?.name || "Not set")}</div>
+      <div><strong>Purchase Date:</strong><br>${escapeHtml(formatDateDisplay(purchase.purchaseDate || purchase.createdAt))}</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Medicine</th>
+            <th>Batch</th>
+            <th>Expiry</th>
+            <th>Qty</th>
+            <th>Buying Price</th>
+            <th>Retail Price</th>
+            <th>Line Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lines.length ? lines.map(line => `
+            <tr>
+              <td><strong>${escapeHtml(line.name || "")}</strong></td>
+              <td>${escapeHtml(line.batchNo || "")}</td>
+              <td>${escapeHtml(formatDateDisplay(line.expiryDate || ""))}</td>
+              <td>${Number(line.qty || 0)}</td>
+              <td>${formatMoney(line.unitCost || 0)}</td>
+              <td>${formatMoney(line.retailPrice || 0)}</td>
+              <td>${formatMoney(Number(line.qty || 0) * Number(line.unitCost || 0))}</td>
+            </tr>
+          `).join("") : `<tr><td colspan="7">No invoice items.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div class="checkout-line total">
+      <span>Invoice Total</span>
+      <strong>${formatMoney(purchase.total || 0)}</strong>
+    </div>
+  `;
+
+  const modalEditBtn = $("modalEditPurchaseBtn");
+  if (modalEditBtn) {
+    modalEditBtn.dataset.purchaseId = purchase.id;
+  }
+
+  openModal("purchaseInvoiceModal");
+}
+
 async function editPurchase(id) {
   if (!requireRole(["Administrator", "Director"])) {
     return showToast("Not allowed.");
@@ -1517,23 +1721,12 @@ async function editPurchase(id) {
     ? purchase.lines.map(line => ({ ...line }))
     : [];
 
-  const firstLine = purchaseLines[0] || null;
-
-  if (firstLine) {
-    $("purchaseMedicineSelect").value = firstLine.name || "";
-    $("purchaseBatchNo").value = firstLine.batchNo || "";
-    $("purchaseExpiryDate").value = formatDateDisplay(firstLine.expiryDate || "");
-    $("purchaseQty").value = firstLine.qty || "";
-    $("purchaseCost").value = firstLine.unitCost || "";
-    $("purchaseRetailPrice").value = firstLine.retailPrice || "";
-  } else {
-    $("purchaseMedicineSelect").value = "";
-    $("purchaseBatchNo").value = "";
-    $("purchaseExpiryDate").value = "";
-    $("purchaseQty").value = "";
-    $("purchaseCost").value = "";
-    $("purchaseRetailPrice").value = "";
-  }
+  $("purchaseMedicineSelect").value = "";
+  $("purchaseBatchNo").value = "";
+  $("purchaseExpiryDate").value = "";
+  $("purchaseQty").value = "";
+  $("purchaseCost").value = "";
+  $("purchaseRetailPrice").value = "";
 
   renderPurchaseLines();
 
@@ -1569,13 +1762,13 @@ async function deletePurchase(id) {
   try {
     if (Array.isArray(purchase.lines)) {
       for (const line of purchase.lines) {
-        const med = await findLocalRecordById(STORE.medicines, line.medicineId);
-        if (!med) continue;
-
-        med.quantity = Math.max(0, Number(med.quantity || 0) - Number(line.qty || 0));
-        med.updatedAt = new Date().toISOString();
-
-        await putRecord(STORE.medicines, med);
+        await adjustBatchStock(
+          line.batchId,
+          line.medicineId,
+          line.batchNo,
+          -Number(line.qty || 0),
+          { medicineName: line.name }
+        );
       }
     }
 
@@ -1617,6 +1810,7 @@ async function deletePurchase(id) {
     showToast(error.message || "Purchase delete failed.");
   }
 }
+
 function renderPurchaseLines() {
   $("purchaseLinesTable").innerHTML = purchaseLines.length ? purchaseLines.map((item, index) => `
     <tr>
@@ -1632,7 +1826,7 @@ function renderPurchaseLines() {
   `).join("") : `<tr><td colspan="8">No purchase lines.</td></tr>`;
 
   const total = purchaseLines.reduce((sum, item) => sum + (item.qty * item.unitCost), 0);
- 
+
   $("purchaseTotal").textContent = formatMoney(total);
 }
 
@@ -1660,6 +1854,7 @@ async function addPurchaseLine() {
 
   purchaseLines.push({
     medicineId: existingMedicine ? existingMedicine.id : null,
+    batchId: null,
     name: existingMedicine ? existingMedicine.name : medicineName,
     isNewMedicine: !existingMedicine,
     batchNo,
@@ -1710,16 +1905,13 @@ async function completePurchase() {
 
     if (Array.isArray(originalPurchase.lines)) {
       for (const oldLine of originalPurchase.lines) {
-        const oldMed = await findLocalRecordById(STORE.medicines, oldLine.medicineId);
-        if (!oldMed) continue;
-
-        oldMed.quantity = Math.max(
-          0,
-          Number(oldMed.quantity || 0) - Number(oldLine.qty || 0)
+        await adjustBatchStock(
+          oldLine.batchId,
+          oldLine.medicineId,
+          oldLine.batchNo,
+          -Number(oldLine.qty || 0),
+          { medicineName: oldLine.name }
         );
-
-        oldMed.updatedAt = new Date().toISOString();
-        await putRecord(STORE.medicines, oldMed);
       }
     }
   }
@@ -1757,33 +1949,33 @@ async function completePurchase() {
       };
 
       const newMedicineId = await addRecord(STORE.medicines, newMedicineData);
-      const medicinesAfterCreate = await getAll(STORE.medicines);
-
-      med = medicinesAfterCreate.find(item =>
-        String(item.id) === String(newMedicineId) ||
-        String(item.name || "").trim().toLowerCase() ===
-        String(line.name || "").trim().toLowerCase()
-      );
+      med = await findLocalRecordById(STORE.medicines, newMedicineId);
 
       if (!med) {
         return showToast(`Could not create medicine: ${line.name}`);
       }
     }
 
-    med.quantity = Number(med.quantity || 0) + Number(line.qty || 0);
-    med.buyingPrice = Number(line.unitCost || med.buyingPrice || 0);
-    med.sellingPrice = Number(line.retailPrice || med.sellingPrice || 0);
-    med.batchNo = line.batchNo;
-    med.expiryDate = line.expiryDate;
+    const updatedBatch = await adjustBatchStock(
+      line.batchId,
+      med.id,
+      line.batchNo,
+      Number(line.qty || 0),
+      {
+        medicineName: med.name,
+        expiryDate: line.expiryDate,
+        unitCost: Number(line.unitCost || 0),
+        retailPrice: Number(line.retailPrice || 0),
+        supplierId,
+        invoiceNo,
+        purchaseDate
+      }
+    );
 
-    if (supplierId) {
-      med.supplierId = supplierId;
-    }
-
-    med.updatedAt = new Date().toISOString();
-
-    await putRecord(STORE.medicines, med);
     line.medicineId = med.id;
+    if (updatedBatch) {
+      line.batchId = updatedBatch.id;
+    }
   }
 
   const purchaseData = {
@@ -1803,11 +1995,11 @@ async function completePurchase() {
     purchaseData.id = originalPurchase.id;
     await putRecord(STORE.purchases, purchaseData);
     await writeAudit("purchase_updated", { invoiceNo, total });
-    showToast("Purchase updated and stock adjusted.");
+    showToast("Purchase updated and batch stock adjusted.");
   } else {
     await addRecord(STORE.purchases, purchaseData);
     await writeAudit("purchase_saved", { invoiceNo, total });
-    showToast("Purchase saved and stock updated.");
+    showToast("Purchase saved and batch stock updated.");
   }
 
   editingPurchaseId = null;
@@ -1829,6 +2021,44 @@ async function completePurchase() {
   }
 }
 
+async function renderMonthlySales() {
+  const tbody = $("monthlySalesTable");
+  if (!tbody) return;
+
+  const sales = (await getAll(STORE.sales)).filter(s => s && !s._deleted);
+  const monthMap = new Map();
+
+  for (const sale of sales) {
+    const iso = toIsoDate(sale.createdAt) || String(sale.createdAt || "").slice(0, 10);
+    const key = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.slice(0, 7) : "Unknown";
+
+    if (!monthMap.has(key)) {
+      let label = key;
+      if (/^\d{4}-\d{2}$/.test(key)) {
+        const [y, m] = key.split("-").map(Number);
+        label = new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+      }
+      monthMap.set(key, { key, label, count: 0, total: 0, profit: 0 });
+    }
+
+    const entry = monthMap.get(key);
+    entry.count += 1;
+    entry.total += Number(sale.total || 0);
+    entry.profit += Number(sale.profit || 0);
+  }
+
+  const rows = Array.from(monthMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+
+  tbody.innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td><strong>${escapeHtml(r.label)}</strong></td>
+      <td>${r.count}</td>
+      <td>${formatMoney(r.total)}</td>
+      <td>${formatMoney(r.profit)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="4">No monthly sales recorded yet.</td></tr>`;
+}
+
 async function renderReports() {
   const reportDate = $("reportDate").value || todayISO();
   $("reportDate").value = reportDate;
@@ -1845,15 +2075,16 @@ async function renderReports() {
   }
 
   const medicines = await getAll(STORE.medicines);
-  const sales = await getAll(STORE.sales);
+  const batches = (await getAll(STORE.batches)).filter(b => b && !b._deleted);
+  const sales = (await getAll(STORE.sales)).filter(s => s && !s._deleted);
   const selectedSales = sales.filter(sale => isSameDay(sale.createdAt, reportDate));
   const salesTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const profitTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.profit || 0), 0);
-  
-  // FIX: Require med.expiryDate to exist before calculating expiry status
+
   const lowStock = medicines.filter(med => Number(med.quantity || 0) <= Number(med.reorderLevel || 5));
-  const expired = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) < 0);
-  const expiring = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
+  const expiryPool = batches.length ? batches : medicines;
+  const expired = expiryPool.filter(item => item.expiryDate && daysUntil(item.expiryDate) < 0);
+  const expiring = expiryPool.filter(item => item.expiryDate && daysUntil(item.expiryDate) >= 0 && daysUntil(item.expiryDate) <= 90);
 
   $("reportSalesTotal").textContent = formatMoney(salesTotal);
   $("reportProfitTotal").textContent = formatMoney(profitTotal);
@@ -1870,33 +2101,50 @@ async function renderReports() {
     </tr>
   `).join("") : `<tr><td colspan="5">No sales for selected date.</td></tr>`;
 
-  const alerts = [...expired, ...expiring, ...lowStock]
-    .filter((item, index, self) => index === self.findIndex(x => x.id === item.id));
+  const alerts = [
+    ...expired.map(item => ({
+      id: `exp-${item.id}`,
+      name: item.medicineName || item.name || "Unnamed",
+      batchNo: item.batchNo || "",
+      qty: Number(item.quantity || 0),
+      expiryDate: item.expiryDate,
+      status: "Expired",
+      badge: "danger"
+    })),
+    ...expiring.map(item => ({
+      id: `soon-${item.id}`,
+      name: item.medicineName || item.name || "Unnamed",
+      batchNo: item.batchNo || "",
+      qty: Number(item.quantity || 0),
+      expiryDate: item.expiryDate,
+      status: "Expiring",
+      badge: "warning"
+    })),
+    ...lowStock.map(med => ({
+      id: `low-${med.id}`,
+      name: med.name || "Unnamed",
+      batchNo: med.batchNo || "",
+      qty: Number(med.quantity || 0),
+      expiryDate: med.expiryDate,
+      status: "Low stock",
+      badge: "warning"
+    }))
+  ].filter((item, index, self) => index === self.findIndex(x => x.id === item.id));
 
-  // FIX: Safely parse med.quantity and med.expiryDate with fallback values
-  $("reportAlertsTable").innerHTML = alerts.length ? alerts.map(med => {
-    const d = med.expiryDate ? daysUntil(med.expiryDate) : 999;
-    let status = "OK";
-    let badge = "success";
-    if (d < 0) { status = "Expired"; badge = "danger"; }
-    else if (d <= 90) { status = "Expiring"; badge = "warning"; }
-    if (Number(med.quantity || 0) <= Number(med.reorderLevel || 5)) {
-      status = status === "OK" ? "Low stock" : `${status} + Low stock`;
-      if (badge !== "danger") badge = "warning";
-    }
-    return `
-      <tr>
-        <td>${escapeHtml(med.name || "Unnamed")}</td>
-        <td>${Number(med.quantity || 0)}</td>
-        <td>${escapeHtml(formatDateDisplay(med.expiryDate) || "N/A")}</td>
-        <td><span class="badge ${badge}">${escapeHtml(status)}</span></td>
-      </tr>
-    `;
-  }).join("") : `<tr><td colspan="4">No low stock or expiry alerts.</td></tr>`;
+  $("reportAlertsTable").innerHTML = alerts.length ? alerts.map(item => `
+    <tr>
+      <td>${escapeHtml(item.name)}${item.batchNo ? ` <span class="muted">(${escapeHtml(item.batchNo)})</span>` : ""}</td>
+      <td>${item.qty}</td>
+      <td>${escapeHtml(formatDateDisplay(item.expiryDate) || "N/A")}</td>
+      <td><span class="badge ${item.badge}">${escapeHtml(item.status)}</span></td>
+    </tr>
+  `).join("") : `<tr><td colspan="4">No low stock or expiry alerts.</td></tr>`;
+
+  await renderMonthlySales();
 }
 
 async function exportSalesCsv() {
-  const sales = await getAll(STORE.sales);
+  const sales = (await getAll(STORE.sales)).filter(s => s && !s._deleted);
   const rows = [["Receipt", "Customer", "Payment", "Subtotal", "Discount", "Total", "Profit", "Cashier", "Sale Type", "Date"]];
   sales.forEach(sale => {
     rows.push([
@@ -1916,7 +2164,7 @@ async function exportSalesCsv() {
 }
 
 async function exportPurchasesCsv() {
-  const purchases = await getAll(STORE.purchases);
+  const purchases = (await getAll(STORE.purchases)).filter(p => p && !p._deleted);
   const suppliers = await getAll(STORE.suppliers);
   const rows = [["Invoice", "Supplier", "Total Cost", "Created By", "Created By Name", "Date"]];
   purchases.forEach(purchase => {
@@ -1958,17 +2206,16 @@ async function openUserForm(id = null) {
   if (id) {
     const user = await findLocalRecordById(STORE.users, id);
     if (!user) return showToast("User not found.");
-    
+
     $("userModalTitle").textContent = "Edit User";
     $("userId").value = user.id;
     $("userName").value = user.name;
     $("userEmail").value = user.email;
     $("userRole").value = user.role;
     $("userActive").value = String(Boolean(user.isActive));
-    
-    // FIX: Inform the admin that a password is already set, and keep it optional to change
+
     const passwordInput = $("userPassword");
-    passwordInput.value = ""; 
+    passwordInput.value = "";
     passwordInput.placeholder = user.passwordHash ? "•••••••• (Password set - leave blank to keep)" : "No password set";
   } else {
     $("userModalTitle").textContent = "Add User";
@@ -1983,7 +2230,6 @@ async function saveUser(event) {
   if (!requireRole(["Administrator", "Director"])) return showToast("Only Admin can save users.");
 
   const id = $("userId").value;
-  // FIX: Use findLocalRecordById instead of direct getById
   const existing = id ? await findLocalRecordById(STORE.users, id) : null;
   const password = $("userPassword").value;
 
@@ -2001,7 +2247,7 @@ async function saveUser(event) {
   if (password) record.passwordHash = simpleHash(password);
 
   if (existing) {
-    record.id = existing.id; // Ensure ID is preserved
+    record.id = existing.id;
     await putRecord(STORE.users, record);
   } else {
     await addRecord(STORE.users, { ...record, createdAt: new Date().toISOString() });
@@ -2011,7 +2257,7 @@ async function saveUser(event) {
   closeModal("userModal");
   showToast("User saved.");
   await refreshAll();
-  
+
   if (typeof queueAutoSync === "function") {
     queueAutoSync();
   }
@@ -2021,7 +2267,6 @@ async function deleteUser(id) {
   if (!requireRole(["Administrator", "Director"])) return showToast("Only Admin can delete users.");
   if (Number(id) === Number(currentUser.id)) return showToast("You cannot delete your own user while logged in.");
 
-  // FIX: Use findLocalRecordById
   const user = await findLocalRecordById(STORE.users, id);
   if (!user) return showToast("User not found.");
 
@@ -2054,35 +2299,6 @@ function downloadFile(filename, content, type = "application/json") {
   URL.revokeObjectURL(link.href);
 }
 
-function browserPrint(modeClass, message) {
-  document.body.classList.add(modeClass);
-
-  const cleanup = () => {
-    document.body.classList.remove(modeClass);
-    window.removeEventListener("afterprint", cleanup);
-  };
-
-  window.addEventListener("afterprint", cleanup);
-
-  setTimeout(() => {
-    window.print();
-    showToast(message);
-  }, 50);
-
-  // Safety cleanup for browsers that do not fire afterprint consistently.
-  setTimeout(cleanup, 5000);
-}
-
-function canUseHtml2Pdf() {
-  return typeof window.html2pdf === "function";
-}
-
-/* =========================================================
-   PROFESSIONAL PRINT / PDF REPORTS
-   Replace the old printOrExportPdf() and printOrExportPagePdf()
-   with this full block.
-========================================================= */
-
 function safeDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -2100,10 +2316,7 @@ function safeTime(value) {
 function reportStyles() {
   return `
     <style>
-      * {
-        box-sizing: border-box;
-      }
-
+      * { box-sizing: border-box; }
       body {
         margin: 0;
         background: #f8fafc;
@@ -2112,7 +2325,6 @@ function reportStyles() {
         font-size: 12px;
         line-height: 1.45;
       }
-
       .report-page {
         position: relative;
         width: 100%;
@@ -2122,7 +2334,6 @@ function reportStyles() {
         padding: 28px;
         overflow: hidden;
       }
-
       .report-watermark {
         position: absolute;
         width: 42%;
@@ -2134,12 +2345,7 @@ function reportStyles() {
         z-index: 0;
         pointer-events: none;
       }
-
-      .report-page > *:not(.report-watermark) {
-        position: relative;
-        z-index: 1;
-      }
-
+      .report-page > *:not(.report-watermark) { position: relative; z-index: 1; }
       .report-header {
         display: flex;
         justify-content: space-between;
@@ -2149,35 +2355,10 @@ function reportStyles() {
         padding-bottom: 16px;
         margin-bottom: 22px;
       }
-
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-
-      .brand-logo-img {
-        width: 58px;
-        height: 58px;
-        object-fit: contain;
-        border-radius: 12px;
-        background: #ffffff;
-      }
-
-      .brand h1 {
-        margin: 0;
-        font-size: 20px;
-        letter-spacing: -0.02em;
-        color: #0057b8;
-        text-transform: uppercase;
-      }
-
-      .brand p {
-        margin: 3px 0 0;
-        color: #0b8f2a;
-        font-weight: 700;
-      }
-
+      .brand { display: flex; align-items: center; gap: 12px; }
+      .brand-logo-img { width: 58px; height: 58px; object-fit: contain; border-radius: 12px; background: #ffffff; }
+      .brand h1 { margin: 0; font-size: 20px; letter-spacing: -0.02em; color: #0057b8; text-transform: uppercase; }
+      .brand p { margin: 3px 0 0; color: #0b8f2a; font-weight: 700; }
       .report-meta {
         text-align: right;
         color: #334155;
@@ -2187,30 +2368,10 @@ function reportStyles() {
         padding: 10px;
         background: #f8fbff;
       }
-
-      .report-title {
-        margin-bottom: 18px;
-      }
-
-      .report-title h2 {
-        margin: 0 0 4px;
-        font-size: 22px;
-        color: #0057b8;
-        text-transform: uppercase;
-      }
-
-      .report-title p {
-        margin: 0;
-        color: #64748b;
-      }
-
-      .summary-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
-        margin: 16px 0 22px;
-      }
-
+      .report-title { margin-bottom: 18px; }
+      .report-title h2 { margin: 0 0 4px; font-size: 22px; color: #0057b8; text-transform: uppercase; }
+      .report-title p { margin: 0; color: #64748b; }
+      .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0 22px; }
       .summary-card {
         border: 1px solid #bfdbfe;
         border-left: 4px solid #0057b8;
@@ -2218,81 +2379,17 @@ function reportStyles() {
         background: rgba(248, 251, 255, 0.92);
         border-radius: 10px;
       }
-
-      .summary-card span {
-        display: block;
-        color: #64748b;
-        font-size: 10px;
-        text-transform: uppercase;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-      }
-
-      .summary-card strong {
-        display: block;
-        margin-top: 5px;
-        font-size: 16px;
-        color: #0057b8;
-      }
-
-      .section {
-        margin-top: 20px;
-        page-break-inside: avoid;
-      }
-
-      .section h3 {
-        margin: 0 0 8px;
-        font-size: 15px;
-        color: #0057b8;
-        border-bottom: 1px solid #bfdbfe;
-        padding-bottom: 6px;
-        text-transform: uppercase;
-      }
-
-      .info-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-        margin: 10px 0 16px;
-      }
-
-      .info-box {
-        border: 1px solid #e2e8f0;
-        padding: 9px;
-        background: rgba(248, 250, 252, 0.92);
-        border-radius: 8px;
-      }
-
-      .info-box span {
-        display: block;
-        color: #64748b;
-        font-size: 10px;
-        text-transform: uppercase;
-        font-weight: 700;
-      }
-
-      .info-box strong {
-        display: block;
-        margin-top: 4px;
-        color: #0f172a;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 8px;
-        page-break-inside: auto;
-        background: rgba(255, 255, 255, 0.92);
-      }
-
-      thead {
-        display: table-header-group;
-      }
-
-      tr {
-        page-break-inside: avoid;
-      }
-
+      .summary-card span { display: block; color: #64748b; font-size: 10px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.04em; }
+      .summary-card strong { display: block; margin-top: 5px; font-size: 16px; color: #0057b8; }
+      .section { margin-top: 20px; page-break-inside: avoid; }
+      .section h3 { margin: 0 0 8px; font-size: 15px; color: #0057b8; border-bottom: 1px solid #bfdbfe; padding-bottom: 6px; text-transform: uppercase; }
+      .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 16px; }
+      .info-box { border: 1px solid #e2e8f0; padding: 9px; background: rgba(248, 250, 252, 0.92); border-radius: 8px; }
+      .info-box span { display: block; color: #64748b; font-size: 10px; text-transform: uppercase; font-weight: 700; }
+      .info-box strong { display: block; margin-top: 4px; color: #0f172a; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; page-break-inside: auto; background: rgba(255, 255, 255, 0.92); }
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
       th {
         background: #0057b8;
         color: #ffffff;
@@ -2303,126 +2400,26 @@ function reportStyles() {
         letter-spacing: 0.04em;
         border: 1px solid #0057b8;
       }
-
-      td {
-        padding: 8px;
-        border: 1px solid #bfdbfe;
-        vertical-align: top;
-      }
-
-      tbody tr:nth-child(even) {
-        background: rgba(248, 251, 255, 0.75);
-      }
-
-      .text-right {
-        text-align: right;
-      }
-
-      .text-center {
-        text-align: center;
-      }
-
-      .muted {
-        color: #64748b;
-      }
-
-      .status {
-        font-weight: 700;
-      }
-
-      .status-danger {
-        color: #b91c1c;
-      }
-
-      .status-warning {
-        color: #b45309;
-      }
-
-      .status-success {
-        color: #15803d;
-      }
-
-      .empty-box {
-        border: 1px dashed #cbd5e1;
-        background: rgba(248, 250, 252, 0.92);
-        padding: 14px;
-        color: #64748b;
-        border-radius: 8px;
-      }
-
-      .totals-box {
-        width: 320px;
-        margin-left: auto;
-        margin-top: 14px;
-        border: 1px solid #bfdbfe;
-        background: rgba(255, 255, 255, 0.92);
-      }
-
-      .total-line {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 9px 11px;
-        border-bottom: 1px solid #e2e8f0;
-      }
-
-      .total-line:last-child {
-        border-bottom: none;
-        font-weight: 800;
-        font-size: 14px;
-        background: #eaf3ff;
-        color: #0057b8;
-      }
-
-      .approval-box {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 18px;
-        margin-top: 26px;
-      }
-
-      .approval-box div {
-        border: 1px solid #bfdbfe;
-        padding: 12px;
-        border-radius: 10px;
-      }
-
-      .approval-line {
-        display: block;
-        border-bottom: 1px solid #0f172a;
-        height: 24px;
-        margin-top: 10px;
-      }
-
-      .footer {
-        margin-top: 28px;
-        padding-top: 12px;
-        border-top: 1px solid #bfdbfe;
-        color: #64748b;
-        font-size: 10px;
-        display: flex;
-        justify-content: space-between;
-        gap: 18px;
-      }
-
+      td { padding: 8px; border: 1px solid #bfdbfe; vertical-align: top; }
+      tbody tr:nth-child(even) { background: rgba(248, 251, 255, 0.75); }
+      .text-right { text-align: right; }
+      .status { font-weight: 700; }
+      .status-danger { color: #b91c1c; }
+      .status-warning { color: #b45309; }
+      .status-success { color: #15803d; }
+      .empty-box { border: 1px dashed #cbd5e1; background: rgba(248, 250, 252, 0.92); padding: 14px; color: #64748b; border-radius: 8px; }
+      .totals-box { width: 320px; margin-left: auto; margin-top: 14px; border: 1px solid #bfdbfe; background: rgba(255, 255, 255, 0.92); }
+      .total-line { display: flex; justify-content: space-between; gap: 12px; padding: 9px 11px; border-bottom: 1px solid #e2e8f0; }
+      .total-line:last-child { border-bottom: none; font-weight: 800; font-size: 14px; background: #eaf3ff; color: #0057b8; }
+      .approval-box { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 26px; }
+      .approval-box div { border: 1px solid #bfdbfe; padding: 12px; border-radius: 10px; }
+      .approval-line { display: block; border-bottom: 1px solid #0f172a; height: 24px; margin-top: 10px; }
+      .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #bfdbfe; color: #64748b; font-size: 10px; display: flex; justify-content: space-between; gap: 18px; }
       @media print {
-        body {
-          background: #ffffff;
-        }
-
-        .report-page {
-          max-width: none;
-          padding: 0;
-        }
-
-        a[href]::after {
-          content: "" !important;
-        }
-
-        @page {
-          size: A4 portrait;
-          margin: 12mm;
-        }
+        body { background: #ffffff; }
+        .report-page { max-width: none; padding: 0; }
+        a[href]::after { content: "" !important; }
+        @page { size: A4 portrait; margin: 12mm; }
       }
     </style>
   `;
@@ -2580,16 +2577,16 @@ async function buildDashboardReport() {
     const stats = await getDashboardStats();
 
     const alerts = [
-      ...stats.expired.map(med => ({
-        medicine: med.name,
-        batch: med.batchNo || "", 
-        detail: med.expiryDate ? `Expired on ${med.expiryDate}` : "Expired",
+      ...stats.expired.map(item => ({
+        medicine: item.medicineName || item.name || "Medicine",
+        batch: item.batchNo || "",
+        detail: item.expiryDate ? `Expired on ${formatDateDisplay(item.expiryDate)}` : "Expired",
         status: "Expired"
       })),
-      ...stats.expiring.map(med => ({
-        medicine: med.name,
-        batch: med.batchNo || "", 
-        detail: med.expiryDate ? `Expires on ${med.expiryDate}` : "Expiring Soon",
+      ...stats.expiring.map(item => ({
+        medicine: item.medicineName || item.name || "Medicine",
+        batch: item.batchNo || "",
+        detail: item.expiryDate ? `Expires on ${formatDateDisplay(item.expiryDate)}` : "Expiring Soon",
         status: "Expiring Soon"
       })),
       ...stats.lowStock.map(med => ({
@@ -2648,7 +2645,6 @@ async function buildDashboardReport() {
     `;
 
     return reportShell("Dashboard Report", "Business overview, sales summary, stock value, and alerts.", body);
-
   } catch (error) {
     console.error("Error building dashboard report:", error);
     return `<h2>Report Generation Failed</h2><p>There was an error loading the data. Please try again.</p>`;
@@ -2657,24 +2653,29 @@ async function buildDashboardReport() {
 
 async function buildInventoryReport() {
   const medicines = await getAll(STORE.medicines);
+  const batches = (await getAll(STORE.batches)).filter(b => b && !b._deleted);
   const suppliers = await getAll(STORE.suppliers);
 
   const search = $("medicineSearch")?.value.toLowerCase().trim() || "";
   const filter = $("medicineStatusFilter")?.value || "all";
 
   let filtered = medicines.filter(med => {
+    const medBatches = batches.filter(b => String(b.medicineId) === String(med.id));
+    const batchText = medBatches.map(b => `${b.batchNo || ""} ${b.expiryDate || ""}`).join(" ");
     const supplier = supplierName(suppliers, med.supplierId).toLowerCase();
-    const haystack = `${med.name} ${med.genericName} ${med.batchNo} ${med.category} ${supplier}`.toLowerCase();
+    const haystack = `${med.name} ${med.genericName} ${med.batchNo} ${batchText} ${med.category} ${supplier}`.toLowerCase();
     return haystack.includes(search);
   });
 
   filtered = filtered.filter(med => {
-    const d = daysUntil(med.expiryDate);
+    const medBatches = batches.filter(b => String(b.medicineId) === String(med.id));
+    const dates = medBatches.length ? medBatches.map(b => daysUntil(b.expiryDate)) : [daysUntil(med.expiryDate)];
+    const minDays = Math.min(...dates);
     const isLow = Number(med.quantity) <= Number(med.reorderLevel || 5);
 
     if (filter === "low") return isLow;
-    if (filter === "expiring") return d >= 0 && d <= 90;
-    if (filter === "expired") return d < 0;
+    if (filter === "expiring") return minDays >= 0 && minDays <= 90;
+    if (filter === "expired") return minDays < 0;
 
     return true;
   });
@@ -2779,7 +2780,7 @@ async function buildSalesReport() {
 
 async function buildPurchasesReport() {
   const suppliers = await getAll(STORE.suppliers);
-  const purchases = await getAll(STORE.purchases);
+  const purchases = (await getAll(STORE.purchases)).filter(p => p && !p._deleted);
 
   const supplierId = Number($("purchaseSupplierSelect")?.value || 0);
   const supplier = suppliers.find(item => Number(item.id) === supplierId);
@@ -2878,13 +2879,12 @@ async function buildReportsPageReport() {
   const reportDate = $("reportDate")?.value || todayISO();
 
   const medicines = await getAll(STORE.medicines);
-  const sales = await getAll(STORE.sales);
+  const sales = (await getAll(STORE.sales)).filter(s => s && !s._deleted);
 
   const selectedSales = sales.filter(sale => isSameDay(sale.createdAt, reportDate));
   const salesTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const profitTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.profit || 0), 0);
 
-  // FIX: Ensure expiryDate exists before calculating expiry
   const lowStock = medicines.filter(med => Number(med.quantity || 0) <= Number(med.reorderLevel || 5));
   const expired = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) < 0);
   const expiring = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
@@ -2997,6 +2997,7 @@ async function buildBackupReport() {
   const users = await getAll(STORE.users);
   const suppliers = await getAll(STORE.suppliers);
   const medicines = await getAll(STORE.medicines);
+  const batches = await getAll(STORE.batches);
   const sales = await getAll(STORE.sales);
   const purchases = await getAll(STORE.purchases);
   const auditLogs = await getAll(STORE.auditLogs);
@@ -3006,11 +3007,11 @@ async function buildBackupReport() {
       ${summaryCard("Users", users.length)}
       ${summaryCard("Suppliers", suppliers.length)}
       ${summaryCard("Medicines", medicines.length)}
+      ${summaryCard("Batches", batches.length)}
       ${summaryCard("Sales", sales.length)}
       ${summaryCard("Purchases", purchases.length)}
       ${summaryCard("Audit Logs", auditLogs.length)}
       ${summaryCard("Generated", todayISO())}
-      ${summaryCard("Storage", "Browser / Device")}
     </div>
 
     <section class="section">
@@ -3061,18 +3062,6 @@ async function printOrExportPagePdf() {
   }
 }
 
-async function printOrExportPdf() {
-  const receiptContent = $("receiptContent");
-
-  if (!receiptContent || !receiptContent.innerHTML.trim()) {
-    showToast("No receipt to print.");
-    return;
-  }
-
-  printElement("receiptContent", "Sales Receipt");
-  showToast("Receipt prepared for printing.");
-}
-
 async function exportBackup() {
   try {
     await dbReady;
@@ -3093,6 +3082,7 @@ async function exportBackup() {
       users: await getAll(STORE.users),
       suppliers: await getAll(STORE.suppliers),
       medicines: await getAll(STORE.medicines),
+      batches: await getAll(STORE.batches),
       sales: await getAll(STORE.sales),
       purchases: await getAll(STORE.purchases),
       expenses: await getAll(STORE.expenses),
@@ -3137,7 +3127,14 @@ async function importBackup(file) {
 
     const backup = JSON.parse(text);
 
-    await importAllData(backup);
+    for (const storeName of DB_STORES) {
+      if (Array.isArray(backup[storeName])) {
+        await clearStore(storeName);
+        for (const item of backup[storeName]) {
+          await putRecord(storeName, item);
+        }
+      }
+    }
 
     currentUser = null;
     localStorage.removeItem(SESSION_KEY);
@@ -3164,12 +3161,14 @@ async function refreshAll() {
   await renderUsers();
   await renderReports();
   await renderSalesHistory();
+  await renderMonthlySales();
   await renderDashboardMedicineSearch();
   renderCart();
   renderPurchaseLines();
   await renderPurchaseHistory();
   await renderPurchaseExpenses();
 }
+
 function printElement(elementId, title = "Print") {
   const element = $(elementId);
   if (!element) return showToast("Nothing to print.");
@@ -3380,6 +3379,7 @@ async function deletePurchaseExpense(id) {
     queueAutoSync();
   }
 }
+
 function bindEvents() {
   $("loginForm").addEventListener("submit", async event => {
     event.preventDefault();
@@ -3389,6 +3389,7 @@ function bindEvents() {
       showToast(error.message);
     }
   });
+
   const mobileMenuHeader = document.querySelector(".logo-sidebar-card");
   const sidebar = document.querySelector(".sidebar");
 
@@ -3399,21 +3400,38 @@ function bindEvents() {
       }
     });
   }
+
   $("logoutBtn").addEventListener("click", logout);
 
   document.querySelectorAll(".nav-link").forEach(button => {
     button.addEventListener("click", () => {
       showPage(button.dataset.page);
 
-      const sidebar = document.querySelector(".sidebar");
-      if (window.innerWidth <= 768 && sidebar) {
-        sidebar.classList.remove("mobile-menu-open");
+      const sidebarEl = document.querySelector(".sidebar");
+      if (window.innerWidth <= 768 && sidebarEl) {
+        sidebarEl.classList.remove("mobile-menu-open");
       }
     });
   });
 
   document.querySelectorAll("[data-close]").forEach(button => {
     button.addEventListener("click", () => closeModal(button.dataset.close));
+  });
+
+  $("modalEditPurchaseBtn")?.addEventListener("click", event => {
+    const purchaseId = event.currentTarget.dataset.purchaseId;
+    closeModal("purchaseInvoiceModal");
+    if (purchaseId) {
+      runAction(event, () => editPurchase(purchaseId), "Could not load purchase for editing.");
+    }
+  });
+
+  $("saleMedicineSelect")?.addEventListener("input", event => {
+    populateSaleBatchOptions(event.target.value);
+  });
+
+  $("saleMedicineSelect")?.addEventListener("change", event => {
+    populateSaleBatchOptions(event.target.value);
   });
 
   $("addMedicineBtn")?.addEventListener("click", () => openMedicineForm());
@@ -3424,7 +3442,6 @@ function bindEvents() {
   $("addSupplierBtn")?.addEventListener("click", () => openSupplierForm());
   $("supplierForm")?.addEventListener("submit", saveSupplier);
 
-
   $("cancelEditSaleBtn")?.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
@@ -3433,7 +3450,9 @@ function bindEvents() {
     $("saleCustomer").value = "";
     renderCart();
   });
+
   $("clearCartBtn")?.addEventListener("click", () => { cart = []; renderCart(); });
+
   function runAction(event, action, errorMessage) {
     if (event) {
       event.preventDefault();
@@ -3477,25 +3496,28 @@ function bindEvents() {
 
   $("clearPurchaseBtn")?.addEventListener("click", event => {
     runAction(event, () => {
+      editingPurchaseId = null;
+      if ($("completePurchaseBtn")) $("completePurchaseBtn").textContent = "Save Purchase";
       purchaseLines = [];
       renderPurchaseLines();
     }, "Could not clear purchase lines.");
   });
+
   $("printPageBtn")?.addEventListener("click", printOrExportPagePdf);
 
   $("expenseForm")?.addEventListener("submit", savePurchaseExpense);
 
-  $("clearPurchaseBtn").addEventListener("click", () => { purchaseLines = []; renderPurchaseLines(); });
-
   $("refreshReportsBtn")?.addEventListener("click", renderReports);
   $("reportDate")?.addEventListener("change", renderReports);
   $("exportSalesCsvBtn")?.addEventListener("click", exportSalesCsv);
-    const printReportBtn = $("printReportBtn");
-    if (printReportBtn) {
-      printReportBtn.addEventListener("click", () => {
-        printElement("reportPrintable", "Sales Report");
-      });
-    }
+
+  const printReportBtn = $("printReportBtn");
+  if (printReportBtn) {
+    printReportBtn.addEventListener("click", () => {
+      printElement("reportPrintable", "Sales Report");
+    });
+  }
+
   const exportPurchasesCsvBtn = $("exportPurchasesCsvBtn");
   if (exportPurchasesCsvBtn) {
     exportPurchasesCsvBtn.addEventListener("click", exportPurchasesCsv);
@@ -3552,6 +3574,10 @@ function bindEvents() {
       deleteSupplier(id);
     }
 
+    if (action === "view-purchase") {
+      runAction(event, () => viewPurchaseInvoice(id), "Could not open invoice.");
+    }
+
     if (action === "edit-purchase") {
       event.preventDefault();
       editPurchase(id);
@@ -3561,9 +3587,15 @@ function bindEvents() {
       event.preventDefault();
       deletePurchase(id);
     }
+
+    if (action === "view-receipt") {
+      runAction(event, () => viewSaleReceipt(id), "Could not open receipt.");
+    }
+
     if (action === "edit-sale") {
       runAction(event, () => editSale(id), "Could not edit sale.");
     }
+
     if (action === "delete-sale") {
       runAction(event, () => deleteSale(id), "Could not delete sale.");
     }
@@ -3604,6 +3636,7 @@ async function init() {
   if ($("expenseDate")) {
     $("expenseDate").value = formatDateDisplay(new Date().toISOString());
   }
+
   const saved = localStorage.getItem(SESSION_KEY);
 
   if (saved) {
