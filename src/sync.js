@@ -127,9 +127,9 @@ function clearPendingDeletes() {
 
 function setSyncButtonState(isSyncing, text) {
   document.querySelectorAll(".sync-now-btn").forEach(button => {
-    button.disabled = false;
+    button.disabled = Boolean(isSyncing);
     button.style.pointerEvents = "auto";
-    button.style.cursor = "pointer";
+    button.style.cursor = isSyncing ? "wait" : "pointer";
     button.textContent = isSyncing ? "Syncing..." : text;
   });
 
@@ -213,7 +213,7 @@ function markDirtyRecord(storeName, record, deleted = false) {
     ...record,
     _deleted: deleted ? true : record._deleted,
     deletedAt: deleted ? (record.deletedAt || now) : record.deletedAt,
-    updatedAt: now
+    updatedAt: record.updatedAt || now
   };
 
   const dirtyMap = getDirtyMap();
@@ -279,10 +279,12 @@ function prepareRecordForCloud(storeName, record) {
 
 function recordFromCloud(row) {
   const cloudRecord = row.data || {};
+  const rawId = cloudRecord.id ?? row.local_id;
+  const parsedId = typeof normalizeDbKey === "function" ? normalizeDbKey(rawId) : rawId;
 
   return {
     ...cloudRecord,
-    id: cloudRecord.id ?? Number(row.local_id),
+    id: parsedId,
     updatedAt:
       cloudRecord.updatedAt ||
       row.updated_at ||
@@ -377,28 +379,30 @@ function patchLocalWriteTracking() {
   const originalDeleteRecord = window.deleteRecord;
 
   window.addRecord = async function patchedAddRecord(storeName, record) {
+    const nextRecord = { ...(record || {}) };
     if (!window.__jerichoApplyingRemote && !window.__jerichoSuppressWriteTracking) {
-      record.updatedAt = new Date().toISOString();
+      nextRecord.updatedAt = new Date().toISOString();
     }
 
-    const newId = await originalAddRecord.call(this, storeName, record);
+    const newId = await originalAddRecord.call(this, storeName, nextRecord);
 
     if (!window.__jerichoApplyingRemote && !window.__jerichoSuppressWriteTracking) {
-      markDirtyRecord(storeName, { ...(record || {}), id: newId }, false);
+      markDirtyRecord(storeName, { ...nextRecord, id: newId }, false);
     }
 
     return newId;
   };
 
   window.putRecord = async function patchedPutRecord(storeName, record) {
+    const nextRecord = { ...(record || {}) };
     if (!window.__jerichoApplyingRemote && !window.__jerichoSuppressWriteTracking) {
-      record.updatedAt = new Date().toISOString();
+      nextRecord.updatedAt = new Date().toISOString();
     }
 
-    const result = await originalPutRecord.call(this, storeName, record);
+    const result = await originalPutRecord.call(this, storeName, nextRecord);
 
     if (!window.__jerichoApplyingRemote && !window.__jerichoSuppressWriteTracking) {
-      markDirtyRecord(storeName, record, isDeletedRecord(record));
+      markDirtyRecord(storeName, nextRecord, isDeletedRecord(nextRecord));
     }
 
     return result;
@@ -649,7 +653,7 @@ async function syncNow(options = {}) {
 
     if (!silent) {
       alert(
-        `Sync complete.\n\nThe app will reload. Log in again.`
+        `Sync complete (${uploaded} uploaded, ${downloaded} active records pulled).\n\nThe app will reload. Log in again.`
       );
     }
 
