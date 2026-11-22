@@ -122,7 +122,11 @@ function deleteRecord(storeName, id) {
 
 function putRecord(storeName, record) {
   return new Promise((resolve, reject) => {
-    const request = getStore(storeName, "readwrite").put(record);
+    const cleanRecord = { ...record };
+    if (cleanRecord.id !== undefined && cleanRecord.id !== null && cleanRecord.id !== "") {
+      cleanRecord.id = normalizeDbKey(cleanRecord.id);
+    }
+    const request = getStore(storeName, "readwrite").put(cleanRecord);
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -136,4 +140,35 @@ function clearStore(storeName) {
     request.onsuccess = () => resolve(true);
     request.onerror = () => reject(request.error);
   });
+}
+
+async function exportAllData() {
+  await dbReady;
+  const data = {};
+  for (const storeName of DB_STORES) {
+    data[storeName] = await getAll(storeName);
+  }
+  return {
+    dbName: DB_NAME,
+    dbVersion: DB_VERSION,
+    exportedAt: new Date().toISOString(),
+    data
+  };
+}
+
+async function importAllData(backup) {
+  await dbReady;
+  const payload = backup && backup.data ? backup.data : backup;
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid backup format.");
+  }
+
+  for (const storeName of DB_STORES) {
+    if (!Array.isArray(payload[storeName])) continue;
+    await clearStore(storeName);
+    for (const item of payload[storeName]) {
+      await putRecord(storeName, item);
+    }
+  }
+  return true;
 }
