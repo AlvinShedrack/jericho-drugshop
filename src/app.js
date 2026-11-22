@@ -207,16 +207,6 @@ function isDirector() {
   return currentUser?.role === "Director";
 }
 
-function escapeHtml(str) {
-  if (str == null) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function supplierName(suppliers, id) {
   const supplier = suppliers.find(item => Number(item.id) === Number(id));
   return supplier ? supplier.name : "Not set";
@@ -253,26 +243,6 @@ async function seedInitialData() {
     },
     {
       id: 2,
-      name: "PATIENCE ANNA MUDUWA",
-      email: "patienceannamuduwa@gmail.com",
-      passwordHash: simpleHash("Budadiri"),
-      role: "Director",
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: 3,
-      name: "PATIENCE ANNA MUDUWA",
-      email: "patienceannamuduwa@gmail.com",
-      passwordHash: simpleHash("Budadiri"),
-      role: "Administrator",
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: 4,
       name: "Main Dispenser",
       email: "dispenser@jericho.com",
       passwordHash: simpleHash("disp2@2026"),
@@ -282,27 +252,7 @@ async function seedInitialData() {
       updatedAt: new Date().toISOString()
     },
     {
-      id: 5,
-      name: "EDRINE CHRIS",
-      email: "edrine@gmail.com",
-      passwordHash: simpleHash("Edrine"),
-      role: "Dispenser",
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: 6,
-      name: "DR. MIKE",
-      email: "mike@gmail.com",
-      passwordHash: simpleHash("Mike"),
-      role: "Dispenser",
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: 7,
+      id: 3,
       name: "Director",
       email: "director@jericho.com",
       passwordHash: simpleHash("dir@2026"),
@@ -468,92 +418,41 @@ function openModal(id) {
 function closeModal(id) {
   $(id).classList.add("hidden");
 }
-async function getDashboardStats() {
+
+async function renderDashboard() {
   const medicines = await getAll(STORE.medicines);
   const sales = await getAll(STORE.sales);
   const today = todayISO();
-
-  // Filter lists
-  const todaySalesList = sales.filter(sale => isSameDay(sale.createdAt, today));
-  
-  // Safe number parsing to prevent NaN errors if a field is accidentally left blank in the DB
-  const lowStock = medicines.filter(med => (Number(med.quantity) || 0) <= (Number(med.reorderLevel) || 5));
+  const todaySales = sales.filter(sale => isSameDay(sale.createdAt, today));
+  const lowStock = medicines.filter(med => Number(med.quantity) <= Number(med.reorderLevel || 5));
   const expiring = medicines.filter(med => daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
   const expired = medicines.filter(med => daysUntil(med.expiryDate) < 0);
 
-  // Calculate totals safely
-  const todaySalesTotal = todaySalesList.reduce((sum, sale) => sum + (Number(sale.total) || 0), 0);
-  const todayProfitTotal = todaySalesList.reduce((sum, sale) => sum + (Number(sale.profit) || 0), 0);
-  const stockValue = medicines.reduce((sum, med) => sum + ((Number(med.quantity) || 0) * (Number(med.buyingPrice) || 0)), 0);
+  const todaySalesTotal = todaySales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+  const todayProfitTotal = todaySales.reduce((sum, sale) => sum + Number(sale.profit || 0), 0);
+  const stockValue = medicines.reduce((sum, med) => sum + (Number(med.quantity || 0) * Number(med.buyingPrice || 0)), 0);
 
-  const recentSales = [...sales]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 15);
+  $("dashTotalMedicines").textContent = medicines.length;
+  $("dashLowStock").textContent = lowStock.length;
+  $("dashExpiring").textContent = expiring.length;
+  $("dashTodaySales").textContent = formatMoney(todaySalesTotal);
+  $("dashTodayProfit").textContent = formatMoney(todayProfitTotal);
+  $("dashStockValue").textContent = formatMoney(stockValue);
 
-  return {
-    medicinesCount: medicines.length,
-    today,
-    todaySalesTotal,
-    todayProfitTotal,
-    stockValue,
-    lowStock,
-    expiring,
-    expired,
-    recentSales
-  };
-}
-async function renderDashboard() {
-  try {
-    const stats = await getDashboardStats();
+  const recent = sales.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 8);
+  $("recentSalesTable").innerHTML = recent.length ? recent.map(sale => `
+    <tr>
+      <td>${escapeHtml(sale.receiptNo)}</td>
+      <td>${escapeHtml(sale.customerName || "Walk-in")}</td>
+      <td>${formatMoney(sale.total)}</td>
+      <td>${new Date(sale.createdAt).toLocaleString()}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="4">No sales yet.</td></tr>`;
 
-    // Update DOM numbers
-    $("dashTotalMedicines").textContent = stats.medicinesCount;
-    $("dashLowStock").textContent = stats.lowStock.length;
-    $("dashExpiring").textContent = stats.expiring.length;
-    $("dashTodaySales").textContent = formatMoney(stats.todaySalesTotal);
-    $("dashTodayProfit").textContent = formatMoney(stats.todayProfitTotal);
-    $("dashStockValue").textContent = formatMoney(stats.stockValue);
-
-    // Build Recent Sales Table (limit to 8 for the dashboard view)
-    const topRecent = stats.recentSales.slice(0, 8);
-    $("recentSalesTable").innerHTML = topRecent.length ? topRecent.map(sale => `
-      <tr>
-        <td>${escapeHtml(sale.receiptNo)}</td>
-        <td>${escapeHtml(sale.customerName || "Walk-in")}</td>
-        <td>${formatMoney(sale.total)}</td>
-        <td>${new Date(sale.createdAt).toLocaleString()}</td>
-      </tr>
-    `).join("") : `<tr><td colspan="4">No sales yet.</td></tr>`;
-
-    // Build Alerts
-    const alerts = [
-    ...stats.expired
-      .filter(med => med.expiryDate)
-      .slice(0, 5)
-      .map(med => {
-        const batchStr = med.batchNo ? `Batch ${med.batchNo} ` : "";
-        return { 
-          type: "danger", 
-          title: `${med.name} expired`, 
-          detail: `${batchStr}expired on ${med.expiryDate}`.trim() 
-        };
-      }),
-    ...stats.expiring
-      .filter(med => med.expiryDate)
-      .slice(0, 5)
-      .map(med => {
-        const batchStr = med.batchNo ? `Batch ${med.batchNo} ` : "";
-        return { 
-          type: "warning", 
-          title: `${med.name} expiring soon`, 
-          detail: `${batchStr}expires on ${med.expiryDate}`.trim() 
-        };
-      }),
-    ...stats.lowStock.slice(0, 5).map(med => ({ 
-      type: "info", 
-      title: `${med.name} low stock`, 
-      detail: `${med.quantity} left. Reorder level is ${med.reorderLevel || 5}.` 
-    }))
+  const alerts = [
+    ...expired.slice(0, 5).map(med => ({ type: "danger", title: `${med.name} expired`, detail: `Batch ${med.batchNo} expired on ${med.expiryDate}` })),
+    ...expiring.slice(0, 5).map(med => ({ type: "warning", title: `${med.name} expiring soon`, detail: `Batch ${med.batchNo} expires on ${med.expiryDate}` })),
+    ...lowStock.slice(0, 5).map(med => ({ type: "info", title: `${med.name} low stock`, detail: `${med.quantity} left. Reorder level is ${med.reorderLevel || 5}.` }))
   ];
 
   $("alertsList").innerHTML = alerts.length ? alerts.slice(0, 8).map(alert => `
@@ -562,11 +461,6 @@ async function renderDashboard() {
       <span class="badge ${alert.type}">${alert.type}</span>
     </div>
   `).join("") : `<div class="warning-box">No priority alerts.</div>`;
-
-  } catch (error) {
-    console.error("Error rendering dashboard:", error);
-    $("alertsList").innerHTML = `<div class="warning-box" style="color: red;">Failed to load dashboard data. Please refresh the page.</div>`;
-  }
 }
 
 async function renderInventory() {
@@ -1832,7 +1726,7 @@ async function completePurchase() {
 async function renderReports() {
   const reportDate = $("reportDate").value || todayISO();
   $("reportDate").value = reportDate;
-  if ($("reportIdText")) {
+    if ($("reportIdText")) {
     $("reportIdText").textContent = `SR-${reportDate.replaceAll("-", "")}`;
   }
 
@@ -1849,11 +1743,9 @@ async function renderReports() {
   const selectedSales = sales.filter(sale => isSameDay(sale.createdAt, reportDate));
   const salesTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const profitTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.profit || 0), 0);
-  
-  // FIX: Require med.expiryDate to exist before calculating expiry status
-  const lowStock = medicines.filter(med => Number(med.quantity || 0) <= Number(med.reorderLevel || 5));
-  const expired = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) < 0);
-  const expiring = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
+  const lowStock = medicines.filter(med => Number(med.quantity) <= Number(med.reorderLevel || 5));
+  const expired = medicines.filter(med => daysUntil(med.expiryDate) < 0);
+  const expiring = medicines.filter(med => daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
 
   $("reportSalesTotal").textContent = formatMoney(salesTotal);
   $("reportProfitTotal").textContent = formatMoney(profitTotal);
@@ -1862,8 +1754,8 @@ async function renderReports() {
 
   $("reportSalesTable").innerHTML = selectedSales.length ? selectedSales.map(sale => `
     <tr>
-      <td>${escapeHtml(sale.receiptNo || "N/A")}</td>
-      <td>${escapeHtml(sale.customerName || "Walk-in")}</td>
+      <td>${escapeHtml(sale.receiptNo)}</td>
+      <td>${escapeHtml(sale.customerName)}</td>
       <td>${formatMoney(sale.total)}</td>
       <td>${formatMoney(sale.profit)}</td>
       <td>${new Date(sale.createdAt).toLocaleTimeString()}</td>
@@ -1873,22 +1765,21 @@ async function renderReports() {
   const alerts = [...expired, ...expiring, ...lowStock]
     .filter((item, index, self) => index === self.findIndex(x => x.id === item.id));
 
-  // FIX: Safely parse med.quantity and med.expiryDate with fallback values
   $("reportAlertsTable").innerHTML = alerts.length ? alerts.map(med => {
-    const d = med.expiryDate ? daysUntil(med.expiryDate) : 999;
+    const d = daysUntil(med.expiryDate);
     let status = "OK";
     let badge = "success";
     if (d < 0) { status = "Expired"; badge = "danger"; }
     else if (d <= 90) { status = "Expiring"; badge = "warning"; }
-    if (Number(med.quantity || 0) <= Number(med.reorderLevel || 5)) {
-      status = status === "OK" ? "Low stock" : `${status} + Low stock`;
+    if (Number(med.quantity) <= Number(med.reorderLevel || 5)) {
+      status += status === "OK" ? "Low stock" : " + Low stock";
       if (badge !== "danger") badge = "warning";
     }
     return `
       <tr>
-        <td>${escapeHtml(med.name || "Unnamed")}</td>
-        <td>${Number(med.quantity || 0)}</td>
-        <td>${escapeHtml(formatDateDisplay(med.expiryDate) || "N/A")}</td>
+        <td>${escapeHtml(med.name)}</td>
+        <td>${med.quantity}</td>
+        <td>${escapeHtml(formatDateDisplay(med.expiryDate))}</td>
         <td><span class="badge ${badge}">${escapeHtml(status)}</span></td>
       </tr>
     `;
@@ -1956,20 +1847,15 @@ async function openUserForm(id = null) {
   $("userId").value = "";
 
   if (id) {
-    const user = await findLocalRecordById(STORE.users, id);
-    if (!user) return showToast("User not found.");
-    
+    const user = await getById(STORE.users, id);
+    if (!user) return;
     $("userModalTitle").textContent = "Edit User";
     $("userId").value = user.id;
     $("userName").value = user.name;
     $("userEmail").value = user.email;
     $("userRole").value = user.role;
     $("userActive").value = String(Boolean(user.isActive));
-    
-    // FIX: Inform the admin that a password is already set, and keep it optional to change
-    const passwordInput = $("userPassword");
-    passwordInput.value = ""; 
-    passwordInput.placeholder = user.passwordHash ? "•••••••• (Password set - leave blank to keep)" : "No password set";
+    $("userPassword").placeholder = "Leave blank to keep current password";
   } else {
     $("userModalTitle").textContent = "Add User";
     $("userPassword").placeholder = "Required for new user";
@@ -1983,8 +1869,7 @@ async function saveUser(event) {
   if (!requireRole(["Administrator", "Director"])) return showToast("Only Admin can save users.");
 
   const id = $("userId").value;
-  // FIX: Use findLocalRecordById instead of direct getById
-  const existing = id ? await findLocalRecordById(STORE.users, id) : null;
+  const existing = id ? await getById(STORE.users, id) : null;
   const password = $("userPassword").value;
 
   if (!id && !password) return showToast("Password is required for new user.");
@@ -2000,18 +1885,13 @@ async function saveUser(event) {
 
   if (password) record.passwordHash = simpleHash(password);
 
-  if (existing) {
-    record.id = existing.id; // Ensure ID is preserved
-    await putRecord(STORE.users, record);
-  } else {
-    await addRecord(STORE.users, { ...record, createdAt: new Date().toISOString() });
-  }
+  if (id) await putRecord(STORE.users, record);
+  else await addRecord(STORE.users, { ...record, createdAt: new Date().toISOString() });
 
   await writeAudit(id ? "user_updated" : "user_created", { email: record.email, role: record.role });
   closeModal("userModal");
   showToast("User saved.");
   await refreshAll();
-  
   if (typeof queueAutoSync === "function") {
     queueAutoSync();
   }
@@ -2021,15 +1901,14 @@ async function deleteUser(id) {
   if (!requireRole(["Administrator", "Director"])) return showToast("Only Admin can delete users.");
   if (Number(id) === Number(currentUser.id)) return showToast("You cannot delete your own user while logged in.");
 
-  // FIX: Use findLocalRecordById
-  const user = await findLocalRecordById(STORE.users, id);
-  if (!user) return showToast("User not found.");
+  const user = await getById(STORE.users, id);
+  if (!user) return;
 
   if (!confirm(`Delete user ${user.name}?`)) return;
 
   try {
-    await deleteEverywhere(STORE.users, user.id);
-    await writeAudit("user_deleted", { id: user.id, email: user.email });
+    await deleteEverywhere(STORE.users, id);
+    await writeAudit("user_deleted", { id, email: user.email });
 
     showToast("User deleted.");
     await refreshAll();
@@ -2576,83 +2455,92 @@ function printHtmlDocument(html) {
 }
 
 async function buildDashboardReport() {
-  try {
-    const stats = await getDashboardStats();
+  const medicines = await getAll(STORE.medicines);
+  const sales = await getAll(STORE.sales);
+  const today = todayISO();
 
-    const alerts = [
-      ...stats.expired.map(med => ({
-        medicine: med.name,
-        batch: med.batchNo || "", 
-        detail: med.expiryDate ? `Expired on ${med.expiryDate}` : "Expired",
-        status: "Expired"
-      })),
-      ...stats.expiring.map(med => ({
-        medicine: med.name,
-        batch: med.batchNo || "", 
-        detail: med.expiryDate ? `Expires on ${med.expiryDate}` : "Expiring Soon",
-        status: "Expiring Soon"
-      })),
-      ...stats.lowStock.map(med => ({
-        medicine: med.name,
-        batch: med.batchNo || "",
-        detail: `${med.quantity} left. Reorder level is ${med.reorderLevel || 5}`,
-        status: "Low Stock"
-      }))
-    ].slice(0, 25);
+  const todaySales = sales.filter(sale => isSameDay(sale.createdAt, today));
+  const lowStock = medicines.filter(med => Number(med.quantity) <= Number(med.reorderLevel || 5));
+  const expiring = medicines.filter(med => daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
+  const expired = medicines.filter(med => daysUntil(med.expiryDate) < 0);
 
-    const body = `
-      <div class="summary-grid">
-        ${summaryCard("Total Medicines", stats.medicinesCount)}
-        ${summaryCard("Low Stock", stats.lowStock.length)}
-        ${summaryCard("Expiring Soon", stats.expiring.length)}
-        ${summaryCard("Expired", stats.expired.length)}
-        ${summaryCard("Today's Sales", formatMoney(stats.todaySalesTotal))}
-        ${summaryCard("Today's Profit", formatMoney(stats.todayProfitTotal))}
-        ${summaryCard("Stock Value", formatMoney(stats.stockValue))}
-        ${summaryCard("Report Date", stats.today)}
-      </div>
+  const todaySalesTotal = todaySales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+  const todayProfitTotal = todaySales.reduce((sum, sale) => sum + Number(sale.profit || 0), 0);
+  const stockValue = medicines.reduce((sum, med) => sum + (Number(med.quantity || 0) * Number(med.buyingPrice || 0)), 0);
 
-      <section class="section">
-        <h3>Recent Sales</h3>
-        ${makeTable(
-          ["Receipt", "Customer", "Payment", "Total", "Profit", "Date"],
-          stats.recentSales.map(sale => `
-            <tr>
-              <td>${escapeHtml(sale.receiptNo)}</td>
-              <td>${escapeHtml(sale.customerName || "Walk-in")}</td>
-              <td>${escapeHtml(sale.paymentMethod || "")}</td>
-              <td class="text-right">${formatMoney(sale.total)}</td>
-              <td class="text-right">${formatMoney(sale.profit)}</td>
-              <td>${safeDateTime(sale.createdAt)}</td>
-            </tr>
-          `),
-          "No sales have been recorded yet."
-        )}
-      </section>
+  const recentSales = [...sales]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 15);
 
-      <section class="section">
-        <h3>Priority Stock Alerts</h3>
-        ${makeTable(
-          ["Medicine", "Batch", "Alert", "Status"],
-          alerts.map(alert => `
-            <tr>
-              <td>${escapeHtml(alert.medicine)}</td>
-              <td>${escapeHtml(alert.batch)}</td>
-              <td>${escapeHtml(alert.detail)}</td>
-              <td><span class="status">${escapeHtml(alert.status)}</span></td>
-            </tr>
-          `),
-          "No priority stock alerts."
-        )}
-      </section>
-    `;
+  const alerts = [
+    ...expired.map(med => ({
+      medicine: med.name,
+      batch: med.batchNo,
+      detail: `Expired on ${med.expiryDate}`,
+      status: "Expired"
+    })),
+    ...expiring.map(med => ({
+      medicine: med.name,
+      batch: med.batchNo,
+      detail: `Expires on ${med.expiryDate}`,
+      status: "Expiring Soon"
+    })),
+    ...lowStock.map(med => ({
+      medicine: med.name,
+      batch: med.batchNo,
+      detail: `${med.quantity} left. Reorder level is ${med.reorderLevel || 5}`,
+      status: "Low Stock"
+    }))
+  ].slice(0, 25);
 
-    return reportShell("Dashboard Report", "Business overview, sales summary, stock value, and alerts.", body);
+  const body = `
+    <div class="summary-grid">
+      ${summaryCard("Total Medicines", medicines.length)}
+      ${summaryCard("Low Stock", lowStock.length)}
+      ${summaryCard("Expiring Soon", expiring.length)}
+      ${summaryCard("Expired", expired.length)}
+      ${summaryCard("Today's Sales", formatMoney(todaySalesTotal))}
+      ${summaryCard("Today's Profit", formatMoney(todayProfitTotal))}
+      ${summaryCard("Stock Value", formatMoney(stockValue))}
+      ${summaryCard("Report Date", today)}
+    </div>
 
-  } catch (error) {
-    console.error("Error building dashboard report:", error);
-    return `<h2>Report Generation Failed</h2><p>There was an error loading the data. Please try again.</p>`;
-  }
+    <section class="section">
+      <h3>Recent Sales</h3>
+      ${makeTable(
+        ["Receipt", "Customer", "Payment", "Total", "Profit", "Date"],
+        recentSales.map(sale => `
+          <tr>
+            <td>${escapeHtml(sale.receiptNo)}</td>
+            <td>${escapeHtml(sale.customerName || "Walk-in")}</td>
+            <td>${escapeHtml(sale.paymentMethod || "")}</td>
+            <td class="text-right">${formatMoney(sale.total)}</td>
+            <td class="text-right">${formatMoney(sale.profit)}</td>
+            <td>${safeDateTime(sale.createdAt)}</td>
+          </tr>
+        `),
+        "No sales have been recorded yet."
+      )}
+    </section>
+
+    <section class="section">
+      <h3>Priority Stock Alerts</h3>
+      ${makeTable(
+        ["Medicine", "Batch", "Alert", "Status"],
+        alerts.map(alert => `
+          <tr>
+            <td>${escapeHtml(alert.medicine)}</td>
+            <td>${escapeHtml(alert.batch)}</td>
+            <td>${escapeHtml(alert.detail)}</td>
+            <td><span class="status">${escapeHtml(alert.status)}</span></td>
+          </tr>
+        `),
+        "No priority stock alerts."
+      )}
+    </section>
+  `;
+
+  return reportShell("Dashboard Report", "Business overview, sales summary, stock value, and alerts.", body);
 }
 
 async function buildInventoryReport() {
@@ -2884,10 +2772,9 @@ async function buildReportsPageReport() {
   const salesTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const profitTotal = selectedSales.reduce((sum, sale) => sum + Number(sale.profit || 0), 0);
 
-  // FIX: Ensure expiryDate exists before calculating expiry
-  const lowStock = medicines.filter(med => Number(med.quantity || 0) <= Number(med.reorderLevel || 5));
-  const expired = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) < 0);
-  const expiring = medicines.filter(med => med.expiryDate && daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
+  const lowStock = medicines.filter(med => Number(med.quantity) <= Number(med.reorderLevel || 5));
+  const expired = medicines.filter(med => daysUntil(med.expiryDate) < 0);
+  const expiring = medicines.filter(med => daysUntil(med.expiryDate) >= 0 && daysUntil(med.expiryDate) <= 90);
 
   const alerts = [...expired, ...expiring, ...lowStock]
     .filter((item, index, self) => index === self.findIndex(x => Number(x.id) === Number(item.id)));
@@ -2910,7 +2797,7 @@ async function buildReportsPageReport() {
         ["Receipt", "Customer", "Payment", "Sale Type", "Total", "Profit", "Time"],
         selectedSales.map(sale => `
           <tr>
-            <td>${escapeHtml(sale.receiptNo || "N/A")}</td>
+            <td>${escapeHtml(sale.receiptNo)}</td>
             <td>${escapeHtml(sale.customerName || "Walk-in")}</td>
             <td>${escapeHtml(sale.paymentMethod || "")}</td>
             <td>${escapeHtml(sale.saleType || "retail")}</td>
@@ -2925,25 +2812,24 @@ async function buildReportsPageReport() {
 
     <section class="section">
       <h3>Low Stock / Expiry Alerts</h3>
-      <div class="report-table-scroll">
-        ${makeTable(
-          ["Medicine", "Batch", "Qty", "Reorder Level", "Expiry", "Status"],
-          alerts.map(med => {
-            const status = medicineStatus(med) || { label: "OK", className: "status-success" };
-            return `
-              <tr>
-                <td>${escapeHtml(med.name || "Unnamed")}</td>
-                <td>${escapeHtml(med.batchNo || "N/A")}</td>
-                <td class="text-right">${Number(med.quantity || 0)}</td>
-                <td class="text-right">${Number(med.reorderLevel || 5)}</td>
-                <td>${escapeHtml(formatDateDisplay(med.expiryDate) || "N/A")}</td>
-                <td><span class="status ${status.className}">${escapeHtml(status.label)}</span></td>
-              </tr>
-            `;
-          }),
-          "No low stock or expiry alerts."
-        )}
-      </div>
+      ${makeTable(
+        ["Medicine", "Batch", "Qty", "Reorder Level", "Expiry", "Status"],
+        alerts.map(med => {
+          const status = medicineStatus(med);
+
+          return `
+            <tr>
+              <td>${escapeHtml(med.name)}</td>
+              <td>${escapeHtml(med.batchNo || "")}</td>
+              <td class="text-right">${Number(med.quantity || 0)}</td>
+              <td class="text-right">${Number(med.reorderLevel || 5)}</td>
+              <td>${escapeHtml(med.expiryDate || "")}</td>
+              <td><span class="status ${status.className}">${escapeHtml(status.label)}</span></td>
+            </tr>
+          `;
+        }),
+        "No low stock or expiry alerts."
+      )}
     </section>
   `;
 
@@ -3074,46 +2960,10 @@ async function printOrExportPdf() {
 }
 
 async function exportBackup() {
-  try {
-    await dbReady;
-
-    const backup = {
-      appName: "Jericho First Aid Drug Shop",
-      backupType: "full-local-backup",
-      exportedAt: new Date().toISOString(),
-      exportedBy: currentUser
-        ? {
-            id: currentUser.id,
-            name: currentUser.name,
-            email: currentUser.email,
-            role: currentUser.role
-          }
-        : null,
-
-      users: await getAll(STORE.users),
-      suppliers: await getAll(STORE.suppliers),
-      medicines: await getAll(STORE.medicines),
-      sales: await getAll(STORE.sales),
-      purchases: await getAll(STORE.purchases),
-      expenses: await getAll(STORE.expenses),
-      auditLogs: await getAll(STORE.auditLogs)
-    };
-
-    const filename = `jericho-backup-${todayISO()}.json`;
-    const content = JSON.stringify(backup, null, 2);
-
-    downloadFile(filename, content, "application/json");
-
-    await writeAudit("backup_exported", {
-      filename,
-      exportedAt: backup.exportedAt
-    });
-
-    showToast("Backup exported.");
-  } catch (error) {
-    console.error("Backup export failed:", error);
-    alert("Backup export failed:\n\n" + (error.message || error));
-  }
+  const backup = await exportAllData();
+  downloadFile(`my-rx-backup-${todayISO()}.json`, JSON.stringify(backup, null, 2));
+  await writeAudit("backup_exported", {});
+  showToast("Backup exported.");
 }
 
 async function importBackup(file) {
