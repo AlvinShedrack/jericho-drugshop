@@ -14,6 +14,7 @@ const JERICHO_SYNC_STORES = [
   "users",
   "suppliers",
   "medicines",
+  "batches",
   "sales",
   "purchases",
   "expenses",
