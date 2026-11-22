@@ -1,10 +1,11 @@
-const DB_NAME = "budadiri_pharmacy_db";
-const DB_VERSION = 2;
+const DB_NAME = "jericho_pharmacy_db";
+const DB_VERSION = 3;
 
 const DB_STORES = [
   "users",
   "suppliers",
   "medicines",
+  "batches",
   "sales",
   "purchases",
   "expenses",
@@ -68,17 +69,9 @@ function getAll(storeName) {
   });
 }
 
-// IndexedDB autoIncrement keys are numbers.
-// Convert numeric-looking IDs (including IDs coming from HTML select values,
-// which are always strings) back to numbers before looking them up.
 function normalizeDbKey(id) {
-  if (id === undefined || id === null || id === "") {
-    return id;
-  }
-
   const value = String(id);
 
-  // IMPORTANT: use \d, not \\d.
   if (/^\d+$/.test(value)) {
     return Number(value);
   }
@@ -92,8 +85,7 @@ function generateLocalId() {
 
 function getById(storeName, id) {
   return new Promise((resolve, reject) => {
-    const key = normalizeDbKey(id);
-    const request = getStore(storeName).get(key);
+    const request = getStore(storeName).get(normalizeDbKey(id));
 
     request.onsuccess = () => resolve(request.result || null);
     request.onerror = () => reject(request.error);
@@ -145,10 +137,3 @@ function clearStore(storeName) {
     request.onerror = () => reject(request.error);
   });
 }
-
-// Load the inventory stock editor after the page scripts are available.
-document.addEventListener("DOMContentLoaded", () => {
-  const stockEditor = document.createElement("script");
-  stockEditor.src = "./src/inventory-stock.js";
-  document.head.appendChild(stockEditor);
-}, { once: true });
